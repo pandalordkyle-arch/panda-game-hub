@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panda Clicker MMORPG</title>
+
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    background:black;
+    color:white;
+    font-family:Arial;
+    text-align:center;
+}
+
+/* Animated Background */
+canvas{
+    position:fixed;
+    top:0;
+    left:0;
+    z-index:-1;
+}
+
+#game-area{
+    display:flex;
+    justify-content:center;
+    gap:40px;
+    margin-top:20px;
+}
+
+.character{
+    width:150px;
+    height:150px;
+    border-radius:50%;
+    background-size:cover;
+    background-position:center;
+    cursor:pointer;
+    position:relative;
+}
+
+.damage{
+    position:absolute;
+    color:#ff4d4d;
+    font-weight:bold;
+    animation:floatUp 1s forwards;
+}
+
+@keyframes floatUp{
+    0%{opacity:1; transform:translateY(0)}
+    100%{opacity:0; transform:translateY(-50px)}
+}
+
+.panel{
+    background:#111;
+    border:1px solid #333;
+    padding:10px;
+    margin:10px auto;
+    width:95%;
+    max-width:450px;
+}
+
+.item{
+    background:#222;
+    margin:5px;
+    padding:8px;
+    cursor:pointer;
+}
+
+.item:hover{background:#333}
+</style>
+</head>
+<body>
+
+<canvas id="bg"></canvas>
+
+<h1>Panda Clicker MMORPG</h1>
+<div id="stats"></div>
+
+<div id="game-area">
+    <div id="panda" class="character"></div>
+    <div id="enemy" class="character"></div>
+</div>
+
+<div class="panel">
+<h2>Boss Raid</h2>
+<div id="bossInfo">No Boss Active</div>
+<div class="item" onclick="startRaid()">Start Raid</div>
+</div>
+
+<div class="panel">
+<h2>Inventory</h2>
+<div id="inventory"></div>
+</div>
+
+<div class="panel">
+<h2>AFK Miner</h2>
+<div id="minerStatus">Inactive</div>
+<div class="item" onclick="buyMiner()">Buy Miner (500 coins)</div>
+</div>
+
+<script>
+// =========================
+// BACKGROUND PARTICLES
+// =========================
+const canvas = document.getElementById("bg");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let particles=[];
+for(let i=0;i<80;i++){
+    particles.push({
+        x:Math.random()*canvas.width,
+        y:Math.random()*canvas.height,
+        r:Math.random()*2,
+        speed:Math.random()*0.5+0.2
+    });
+}
+
+function animateBG(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle="white";
+    particles.forEach(p=>{
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+        ctx.fill();
+        p.y+=p.speed;
+        if(p.y>canvas.height) p.y=0;
+    });
+    requestAnimationFrame(animateBG);
+}
+animateBG();
+
+// =========================
+// AUDIO
+// =========================
+const attackSound = new Audio("https://actions.google.com/sounds/v1/impacts/punch_medium.ogg");
+const levelSound = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
+
+// =========================
+// PLAYER
+// =========================
+let coins=200;
+let level=1;
+let xp=0;
+let xpToLevel=100;
+
+let player={
+    strength:5,
+    defense:2,
+    health:150,
+    maxHealth:150
+};
+
+// =========================
+// ENEMY
+// =========================
+let enemy={
+    health:100,
+    maxHealth:100,
+    level:1
+};
+
+// =========================
+// BOSS RAID
+// =========================
+let boss=null;
+let raidActive=false;
+
+function startRaid(){
+    boss={
+        name:"Shadow Titan",
+        phase:1,
+        health:1000,
+        maxHealth:1000
+    };
+    raidActive=true;
+    update();
+}
+
+function bossLogic(){
+    if(!raidActive) return;
+
+    if(boss.health<=0){
+        boss.phase++;
+        if(boss.phase>3){
+            coins+=1000;
+            raidActive=false;
+            boss=null;
+            return;
+        }
+        boss.maxHealth+=500;
+        boss.health=boss.maxHealth;
+    }
+}
+
+// =========================
+// PET SYSTEM
+// =========================
+let pet={
+    owned:true,
+    damage:3
+};
+
+setInterval(()=>{
+    if(pet.owned){
+        enemy.health-=pet.damage;
+        if(enemy.health<=0) defeatEnemy();
+        update();
+    }
+},2000);
+
+// =========================
+// AFK MINER
+// =========================
+let miner=false;
+
+function buyMiner(){
+    if(coins>=500){
+        coins-=500;
+        miner=true;
+        minerStatus.innerText="Active (+10 coins/sec)";
+    }
+}
+
+setInterval(()=>{
+    if(miner){
+        coins+=10;
+        update();
+    }
+},1000);
+
+// =========================
+// INVENTORY
+// =========================
+let inventoryItems=[];
+
+function addItem(name){
+    inventoryItems.push(name);
+    renderInventory();
+}
+
+function renderInventory(){
+    inventory.innerHTML="";
+    inventoryItems.forEach((item,index)=>{
+        let div=document.createElement("div");
+        div.className="item";
+        div.innerText=item+" (Use)";
+        div.onclick=()=>{
+            useItem(item,index);
+        };
+        inventory.appendChild(div);
+    });
+}
+
+function useItem(item,index){
+    if(item==="Health Potion"){
+        player.health=Math.min(player.maxHealth,player.health+50);
+    }
+    inventoryItems.splice(index,1);
+    renderInventory();
+    update();
+}
+
+// =========================
+// COMBAT
+// =========================
+panda.onclick=()=>{
+    attackSound.play();
+    enemy.health-=player.strength;
+    if(enemy.health<=0) defeatEnemy();
+    if(raidActive) boss.health-=player.strength;
+    bossLogic();
+    update();
+}
+
+enemy.onclick=()=>{
+    player.health-=enemy.level*2-player.defense;
+    if(player.health<=0){
+        player.health=player.maxHealth;
+        coins-=50;
+    }
+    update();
+}
+
+function defeatEnemy(){
+    coins+=50;
+    xp+=30;
+    enemy.level++;
+    enemy.maxHealth+=50;
+    enemy.health=enemy.maxHealth;
+
+    if(Math.random()<0.3){
+        addItem("Health Potion");
+    }
+
+    if(xp>=xpToLevel){
+        xp=0;
+        level++;
+        player.strength+=3;
+        player.maxHealth+=20;
+        player.health=player.maxHealth;
+        levelSound.play();
+    }
+}
+
+// =========================
+// UPDATE
+// =========================
+function update(){
+    stats.innerHTML=
+    `Level: ${level} | Coins: ${coins}<br>
+    HP: ${player.health}/${player.maxHealth}<br>
+    Enemy HP: ${enemy.health}/${enemy.maxHealth}<br>
+    ${raidActive ? "Boss Phase "+boss.phase+" HP: "+boss.health+"/"+boss.maxHealth : ""}`;
+}
+
+panda.style.backgroundImage="url('https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Grosser_Panda.JPG/640px-Grosser_Panda.JPG')";
+enemy.style.backgroundImage="url('https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/RedPandaFullBody.JPG/640px-RedPandaFullBody.JPG')";
+
+update();
+</script>
+
+</body>
+</html>

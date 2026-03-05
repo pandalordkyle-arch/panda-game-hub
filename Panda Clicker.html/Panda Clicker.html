@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Panda Clicker RPG AI & Economy</title>
+<style>
+    body {
+        margin: 0;
+        background: #050505;
+        color: white;
+        font-family: Arial, sans-serif;
+        text-align: center;
+    }
+
+    #login, #game { padding-top: 20px; }
+
+    input { padding: 8px; margin: 6px; }
+    button { padding: 8px 16px; cursor: pointer; }
+
+    #score { font-size: 24px; }
+
+    #game-area {
+        display: flex;
+        justify-content: center;
+        gap: 40px;
+        margin-top: 20px;
+    }
+
+    #panda, .enemy, .boss {
+        width: 180px;
+        height: 180px;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: transform 0.1s;
+        background-size: cover;
+        background-position: center;
+    }
+
+    #panda:active {
+        transform: scale(0.95);
+    }
+
+    .hit {
+        animation: hit 0.2s;
+    }
+
+    @keyframes hit {
+        0% { transform: scale(1); }
+        50% { transform: scale(0.9); }
+        100% { transform: scale(1); }
+    }
+
+    #quests, #npc, #shop {
+        margin-top: 30px;
+    }
+
+    .panel {
+        background: #111;
+        border: 1px solid #333;
+        width: 280px;
+        margin: 0 auto;
+        padding: 10px;
+    }
+
+    .item {
+        background: #222;
+        border: 1px solid #444;
+        padding: 6px;
+        margin: 4px;
+        cursor: pointer;
+    }
+
+    .item:hover { background: #333; }
+</style>
+</head>
+<body>
+
+<div id="login">
+    <h1>Panda Clicker RPG AI Economy</h1>
+    <input id="username" placeholder="Username">
+    <button onclick="login()">Login / Create</button>
+</div>
+
+<div id="game" style="display:none;">
+    <h2 id="welcome"></h2>
+    <div id="score">Coins: 0 | Level: 1</div>
+    <div id="stats"></div>
+
+    <div id="game-area">
+        <div id="panda"></div>
+        <div id="enemy"></div>
+        <div id="boss"></div>
+    </div>
+
+    <div id="quests" class="panel">
+        <h2>Quest Dialog</h2>
+        <div id="quest-dialog">Talk to the quest NPC.</div>
+        <div id="quest-options"></div>
+    </div>
+
+    <div id="npc" class="panel">
+        <h2>Trader NPC</h2>
+        <div id="npc-dialog">Hello traveler! Want to trade?</div>
+        <div class="item" onclick="trade('potion')">Buy Health Potion (price varies)</div>
+        <div class="item" onclick="trade('sword')">Buy Iron Sword</div>
+        <div class="item" onclick="trade('shield')">Buy Shield</div>
+    </div>
+
+    <div id="shop" class="panel">
+        <h2>Economy Shop</h2>
+        <div id="market-list"></div>
+    </div>
+</div>
+
+<script>
+let user = null;
+
+let coins = 100;
+let level = 1;
+let xp = 0;
+let xpToLevel = 50;
+
+let strength = 1;
+let defense = 1;
+let health = 100;
+let maxHealth = 100;
+
+let market = {
+    potion: 20,
+    sword: 50,
+    shield: 50
+};
+
+let quests = [
+    { text: "Defeat 5 enemies", reward: 20, done: false },
+    { text: "Collect 200 coins", reward: 1, done: false, type: "skill" },
+    { text: "Find a rare item", reward: 50, done: false }
+];
+
+let enemyAI = {
+    aggressiveness: 1,
+    strategy: "balanced"
+};
+
+let enemyHealth = 20;
+let bossHealth = 200;
+let bossPhase = 1;
+let bossActive = false;
+
+const scoreEl = document.getElementById('score');
+const statsEl = document.getElementById('stats');
+const questDialog = document.getElementById('quest-dialog');
+const questOptions = document.getElementById('quest-options');
+const marketList = document.getElementById('market-list');
+
+const panda = document.getElementById('panda');
+const enemy = document.getElementById('enemy');
+const boss = document.getElementById('boss');
+
+panda.style.backgroundImage = "url('https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/Grosser_Panda.JPG/640px-Grosser_Panda.JPG')";
+enemy.style.backgroundImage = "url('https://upload.wikimedia.org/wikipedia/commons/thumb/3/37/RedPandaFullBody.JPG/640px-RedPandaFullBody.JPG')";
+boss.style.backgroundImage = "url('https://upload.wikimedia.org/wikipedia/commons/thumb/5/56/Tiger.50.jpg/640px-Tiger.50.jpg')";
+
+function login() {
+    const name = document.getElementById('username').value.trim();
+    if (!name) return;
+
+    user = name;
+    document.getElementById('login').style.display = 'none';
+    document.getElementById('game').style.display = 'block';
+    document.getElementById('welcome').textContent = `Welcome, ${user}!`;
+
+    load();
+    generateQuests();
+    generateMarket();
+    nextEnemy();
+    update();
+}
+
+// Click combat
+panda.addEventListener('click', () => {
+    gainXp(5);
+    coins += 1;
+
+    enemy.classList.add('hit');
+    setTimeout(() => enemy.classList.remove('hit'), 200);
+
+    enemyHealth -= strength;
+    if (enemyHealth <= 0) defeatEnemy();
+
+    update();
+    save();
+});
+
+// Enemy AI Combat
+enemy.addEventListener('click', () => {
+    enemyAIAction();
+    enemyHealth -= strength;
+    if (enemyHealth <= 0) defeatEnemy();
+    update();
+    save();
+});
+
+// AI enemy behavior (advanced)
+function enemyAIAction() {
+    if (Math.random() < 0.3) {
+        health -= Math.max(1, enemyAI.aggressiveness);
+    }
+
+    if (health <= 0) {
+        health = maxHealth;
+    }
+}
+
+// Boss combat (phases)
+boss.addEventListener('click', () => {
+    if (!bossActive) return;
+
+    boss.classList.add('hit');
+    setTimeout(() => boss.classList.remove('hit'), 200);
+
+    bossHealth -= strength;
+
+    if (bossHealth <= 0) nextBossPhase();
+
+    update();
+    save();
+});
+
+function defeatEnemy() {
+    coins += 10;
+    gainXp(10);
+    nextEnemy();
+}
+
+function nextEnemy() {
+    enemyHealth = 20 + level * 5;
+    enemyAI.aggressiveness = Math.min(5, level / 2);
+}
+
+function spawnBoss() {
+    bossActive = true;
+    bossPhase = 1;
+    bossHealth = 200 + level * 50;
+}
+
+function nextBossPhase() {
+    bossPhase++;
+
+    if (bossPhase > 3) {
+        bossActive = false;
+        coins += 100;
+        gainXp(100);
+        return;
+    }
+
+    bossHealth = 150 + bossPhase * 75;
+}
+
+// Economy trading (dynamic pricing)
+function trade(item) {
+    const price = market[item];
+
+    if (coins < price) return;
+
+    coins -= price;
+
+    if (item === 'potion') health = Math.min(maxHealth, health + 50);
+    if (item === 'sword') strength += 2;
+    if (item === 'shield') defense += 2;
+
+    market[item] = Math.max(10, market[item] + Math.floor(Math.random() * 10) - 5);
+
+    generateMarket();
+    update();
+    save();
+}
+
+// Market generator (real economy)
+function generateMarket() {
+    marketList.innerHTML = `
+        <div class="item" onclick="trade('potion')">Potion — ${market.potion} coins</div>
+        <div class="item" onclick="trade('sword')">Sword — ${market.sword} coins</div>
+        <div class="item" onclick="trade('shield')">Shield — ${market.shield} coins</div>
+    `;
+}
+
+// Quest system (dialog & rewards)
+function generateQuests() {
+    questOptions.innerHTML = '';
+
+    quests.forEach((q, index) => {
+        if (q.done) return;
+
+        const option = document.createElement('div');
+        option.className = 'item';
+        option.textContent = q.text;
+        option.onclick = () => completeQuest(index);
+
+        questOptions.appendChild(option);
+    });
+}
+
+function completeQuest(index) {
+    const quest = quests[index];
+    quest.done = true;
+
+    if (quest.type === 'skill') {
+        strength++;
+    } else {
+        coins += quest.reward;
+    }
+
+    questDialog.textContent = "Quest complete!";
+    generateQuests();
+    update();
+    save();
+}
+
+// XP and leveling
+function gainXp(amount) {
+    xp += amount;
+
+    if (xp >= xpToLevel) levelUp();
+}
+
+function levelUp() {
+    xp = 0;
+    level++;
+    xpToLevel = Math.floor(xpToLevel * 1.4);
+
+    strength++;
+    defense++;
+    maxHealth += 10;
+    health = maxHealth;
+
+    if (level % 5 === 0) spawnBoss();
+
+    generateQuests();
+}
+
+// UI update
+function update() {
+    scoreEl.textContent = `Coins: ${coins} | Level: ${level}`;
+    statsEl.innerHTML = `
+        XP: ${xp}/${xpToLevel}<br>
+        Strength: ${strength}<br>
+        Defense: ${defense}<br>
+        Health: ${health}/${maxHealth}<br>
+        Boss Phase: ${bossActive ? bossPhase : 'None'}
+    `;
+}
+
+// Save / Load economy & progress
+function save() {
+    if (!user) return;
+
+    const data = {
+        coins, level, xp, xpToLevel,
+        strength, defense, health, maxHealth,
+        market, quests
+    };
+
+    localStorage.setItem(`pandaRpg_${user}`, JSON.stringify(data));
+}
+
+function load() {
+    const data = JSON.parse(localStorage.getItem(`pandaRpg_${user}`) || 'null');
+    if (!data) return;
+
+    coins = data.coins;
+    level = data.level;
+    xp = data.xp;
+    xpToLevel = data.xpToLevel;
+    strength = data.strength;
+    defense = data.defense;
+    health = data.health;
+    maxHealth = data.maxHealth;
+    market = data.market || market;
+    quests = data.quests || quests;
+}
+
+update();
+</script>
+
+</body>
+</html>
