@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>PandaLordKyle Game Hub ULTRA</title>
+
+<style>
+
+/* BACKGROUND */
+
+body{
+margin:0;
+font-family:Arial;
+color:white;
+cursor:crosshair;
+
+background:
+linear-gradient(rgba(0,0,0,0.75),rgba(0,0,0,0.9)),
+url("https://images.unsplash.com/photo-1542751371-adc38448a05e");
+
+background-size:cover;
+background-position:center;
+background-attachment:fixed;
+}
+
+/* LAYOUT */
+
+#container{
+display:flex;
+height:100vh;
+}
+
+/* SIDE PANELS */
+
+.side-banner{
+width:200px;
+background:#111;
+display:flex;
+flex-direction:column;
+align-items:center;
+padding:20px;
+border-right:2px solid #00ff99;
+border-left:2px solid #00ff99;
+}
+
+.side-banner h2{
+text-align:center;
+}
+
+.link-btn{
+margin:8px 0;
+padding:8px 14px;
+border:1px solid #00ff99;
+border-radius:8px;
+color:white;
+text-decoration:none;
+}
+
+.link-btn:hover{
+background:#00ff99;
+color:black;
+}
+
+/* MAIN */
+
+#main{
+flex:1;
+display:flex;
+flex-direction:column;
+overflow:auto;
+}
+
+/* HEADER */
+
+#header{
+text-align:center;
+font-size:26px;
+padding:18px;
+background:#111;
+border-bottom:2px solid #00ff99;
+}
+
+/* HERO */
+
+#hero{
+height:200px;
+display:flex;
+align-items:center;
+padding-left:40px;
+background:linear-gradient(120deg,#111,#1a1a1a);
+border-bottom:2px solid #00ff99;
+}
+
+#hero button{
+margin-top:10px;
+padding:12px 24px;
+border:none;
+border-radius:8px;
+background:#00ff99;
+cursor:pointer;
+font-weight:bold;
+}
+
+/* FILTERS */
+
+#filters{
+display:flex;
+gap:10px;
+padding:15px 30px;
+}
+
+#filters button{
+padding:8px 16px;
+background:#1b1b1b;
+border:1px solid #00ff99;
+color:white;
+border-radius:6px;
+cursor:pointer;
+}
+
+/* GAME GRID */
+
+#gameList{
+display:grid;
+grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+gap:24px;
+padding:30px;
+}
+
+/* GAME CARD */
+
+.gameCard{
+background:#151515;
+border-radius:14px;
+overflow:hidden;
+transition:0.3s;
+text-align:center;
+border:2px solid transparent;
+}
+
+.gameCard:hover{
+transform:translateY(-8px);
+border-color:#00ff99;
+box-shadow:0 0 30px #00ff99;
+}
+
+.gameCard img{
+width:100%;
+height:150px;
+object-fit:cover;
+}
+
+.gameTitle{
+font-size:18px;
+margin-top:10px;
+}
+
+.rating{
+color:#ffcc00;
+font-size:14px;
+}
+
+.playtime{
+font-size:13px;
+color:#bbb;
+}
+
+.playBtn{
+margin:12px auto 15px;
+padding:10px 20px;
+border:none;
+border-radius:8px;
+background:#00ff99;
+cursor:pointer;
+font-weight:bold;
+}
+
+/* GAME VIEWER */
+
+#gameViewer{
+position:fixed;
+inset:0;
+background:rgba(0,0,0,0.95);
+display:none;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+}
+
+#topBar{
+width:90%;
+max-width:1100px;
+display:flex;
+justify-content:space-between;
+margin-bottom:10px;
+}
+
+#gameContainer{
+width:90%;
+max-width:1100px;
+height:650px;
+background:black;
+border-radius:16px;
+overflow:hidden;
+border:3px solid #00ff99;
+}
+
+iframe{
+width:100%;
+height:100%;
+border:none;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="container">
+
+<!-- LEFT PANEL -->
+
+<div class="side-banner">
+
+<h2>🐼 PandaLordKyle</h2>
+
+<a class="link-btn" href="https://www.youtube.com/@pandalordkyleYT" target="_blank">▶ YouTube</a>
+<a class="link-btn" href="https://www.twitch.tv/pandalordkyle" target="_blank">🎮 Twitch</a>
+
+</div>
+
+<!-- MAIN -->
+
+<div id="main">
+
+<div id="header">🐼 PandaLordKyle Game Hub</div>
+
+<div id="hero">
+<div>
+<h1>🔥 Featured Game</h1>
+<h2>Panda Clash</h2>
+<button onclick="startGame(games[5])">▶ PLAY NOW</button>
+</div>
+</div>
+
+<div id="filters">
+<button onclick="filterGames('all')">All</button>
+<button onclick="filterGames('action')">Action</button>
+<button onclick="filterGames('survival')">Survival</button>
+<button onclick="filterGames('strategy')">Strategy</button>
+</div>
+
+<div id="gameList"></div>
+
+</div>
+
+<!-- RIGHT PANEL -->
+
+<div class="side-banner">
+
+<h2>🏆 Top Players</h2>
+
+<div>
+1️⃣ Kyle — 1200<br>
+2️⃣ PandaPro — 900<br>
+3️⃣ Shadow — 700
+</div>
+
+</div>
+
+</div>
+
+<!-- GAME VIEWER -->
+
+<div id="gameViewer">
+
+<div id="topBar">
+
+<button onclick="backToMenu()">⬅ Back</button>
+
+<div id="playTimeDisplay">Playtime: 0m</div>
+
+</div>
+
+<div id="gameContainer">
+<iframe id="gameFrame"></iframe>
+</div>
+
+</div>
+
+<script>
+
+let playStart=0
+let playTimer=null
+let currentGame=null
+
+const games=[
+
+{name:"Panda Shooter",file:"Panda Shooter.html",thumb:"https://via.placeholder.com/300x150?text=Panda+Shooter",category:"action"},
+
+{name:"Arena Wave",file:"Arena Wave.html",thumb:"https://via.placeholder.com/300x150?text=Arena+Wave",category:"survival"},
+
+{name:"Dodge World",file:"PandaLord Dodge World.html",thumb:"https://via.placeholder.com/300x150?text=Dodge+World",category:"survival"},
+
+{name:"Panda Clicker",file:"Panda Clicker.html",thumb:"https://via.placeholder.com/300x150?text=Clicker",category:"action"},
+
+{name:"PandaCraft",file:"Panda Craft.html",thumb:"https://via.placeholder.com/300x150?text=PandaCraft",category:"strategy"},
+
+{name:"Panda Clash",file:"Panda Clash.html",thumb:"https://via.placeholder.com/300x150?text=Panda+Clash",category:"strategy"}
+
+]
+
+const gameList=document.getElementById("gameList")
+
+function formatTime(seconds){
+
+let h=Math.floor(seconds/3600)
+let m=Math.floor((seconds%3600)/60)
+
+return h+"h "+m+"m"
+
+}
+
+function renderGameCards(list=games){
+
+gameList.innerHTML=""
+
+list.forEach(game=>{
+
+let total=Number(localStorage.getItem("playtime_"+game.name)||0)
+
+let card=document.createElement("div")
+card.className="gameCard"
+
+card.innerHTML=`
+
+<img src="${game.thumb}">
+<div class="gameTitle">${game.name}</div>
+<div class="rating">⭐⭐⭐⭐☆</div>
+<div class="playtime">⏱ ${formatTime(total)}</div>
+<button class="playBtn">▶ Play</button>
+
+`
+
+card.querySelector(".playBtn").onclick=()=>startGame(game)
+
+gameList.appendChild(card)
+
+})
+
+}
+
+function filterGames(cat){
+
+if(cat==="all"){
+renderGameCards()
+return
+}
+
+renderGameCards(games.filter(g=>g.category===cat))
+
+}
+
+function startGame(game){
+
+currentGame=game
+
+const viewer=document.getElementById("gameViewer")
+
+viewer.style.display="flex"
+
+document.getElementById("gameFrame").src=game.file
+
+playStart=Date.now()
+
+playTimer=setInterval(updatePlaytime,1000)
+
+}
+
+function updatePlaytime(){
+
+let seconds=Math.floor((Date.now()-playStart)/1000)
+
+let total=Number(localStorage.getItem("playtime_"+currentGame.name)||0)
+
+document.getElementById("playTimeDisplay").innerText=
+"Session: "+formatTime(seconds)+" | Total: "+formatTime(total+seconds)
+
+}
+
+function backToMenu(){
+
+clearInterval(playTimer)
+
+let session=Math.floor((Date.now()-playStart)/1000)
+
+let total=Number(localStorage.getItem("playtime_"+currentGame.name)||0)
+
+total+=session
+
+localStorage.setItem("playtime_"+currentGame.name,total)
+
+checkAchievements()
+
+updateMostPlayed()
+
+document.getElementById("gameViewer").style.display="none"
+document.getElementById("gameFrame").src=""
+
+renderGameCards()
+
+}
+
+function updateMostPlayed(){
+
+let bestGame=""
+let bestTime=0
+
+games.forEach(g=>{
+
+let t=Number(localStorage.getItem("playtime_"+g.name)||0)
+
+if(t>bestTime){
+bestTime=t
+bestGame=g.name
+}
+
+})
+
+if(bestGame){
+
+document.getElementById("header").innerText=
+"🐼 PandaLordKyle Game Hub | Most Played: "+bestGame+" ("+formatTime(bestTime)+")"
+
+}
+
+}
+
+function checkAchievements(){
+
+let totalPlay=0
+
+games.forEach(g=>{
+totalPlay+=Number(localStorage.getItem("playtime_"+g.name)||0)
+})
+
+if(totalPlay>3600){
+alert("🏅 Achievement Unlocked: One Hour Gamer!")
+}
+
+}
+
+document.addEventListener("keydown",e=>{
+if(e.key==="Escape"){
+backToMenu()
+}
+})
+
+updateMostPlayed()
+renderGameCards()
+
+</script>
+
+</body>
+</html>
