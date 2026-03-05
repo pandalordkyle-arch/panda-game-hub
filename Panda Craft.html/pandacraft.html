@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mini Minecraft – Three.js</title>
+  <style>
+    body { margin:0; overflow:hidden; font-family:Arial, sans-serif; }
+    #ui {
+      position: absolute;
+      color: white;
+      pointer-events: none;
+      user-select: none;
+    }
+    #crosshair {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 20px;
+      height: 20px;
+      transform: translate(-50%,-50%);
+      font-size: 24px;
+      line-height: 20px;
+      text-align: center;
+    }
+    #hotbar {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.4);
+      padding: 8px;
+      border-radius: 8px;
+      display: flex;
+      gap: 6px;
+    }
+    .slot {
+      width: 48px;
+      height: 48px;
+      background: rgba(255,255,255,0.15);
+      border: 2px solid #444;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      position: relative;
+    }
+    .slot.selected {
+      border-color: #ffeb3b;
+      box-shadow: 0 0 10px #ffeb3b;
+    }
+    .count {
+      position: absolute;
+      bottom: 2px;
+      right: 4px;
+      font-size: 14px;
+      color: white;
+      text-shadow: 1px 1px 2px black;
+    }
+    #inventory {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%,-50%);
+      background: rgba(40,40,40,0.9);
+      padding: 20px;
+      border-radius: 10px;
+      color: white;
+      display: none;
+      pointer-events: all;
+    }
+    #inventory h2 {
+      margin: 0 0 15px 0;
+      text-align: center;
+    }
+    .crafting {
+      margin-top: 20px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+<div id="ui">
+  <div id="crosshair">+</div>
+  <div id="hotbar"></div>
+  <div id="inventory">
+    <h2>Inventory</h2>
+    <div id="inv-slots"></div>
+    <div class="crafting">
+      <button onclick="craft('planks')">Craft 4 Planks (need 1 Log)</button><br><br>
+      <button onclick="craft('stick')">Craft 4 Sticks (need 2 Planks)</button><br><br>
+      <button onclick="craft('wooden_pickaxe')">Craft Wooden Pickaxe (need 3 Planks + 2 Sticks)</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160/build/three.min.js"></script>
+<script>
+// ────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x88aaff);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+sun.position.set(50, 120, 80);
+scene.add(sun);
+
+// Materials
+const materials = {
+  grass: new THREE.MeshLambertMaterial({color: 0x44cc44}),
+  dirt:  new THREE.MeshLambertMaterial({color: 0x8b5a2b}),
+  stone: new THREE.MeshLambertMaterial({color: 0x777777}),
+  log:   new THREE.MeshLambertMaterial({color: 0x8B4513}),
+  leaves:new THREE.MeshLambertMaterial({color: 0x5aa35a}),
+  planks:new THREE.MeshLambertMaterial({color: 0xc19a6b}),
+};
+
+// ────────────────────────────────────────────────
+// WORLD
+const BLOCK_SIZE = 1;
+const WORLD_SIZE = 32;
+const heightMap = {};
+
+function getHeight(x, z) {
+  return Math.floor(Math.sin(x*0.18)*Math.cos(z*0.18)*4 + 7);
+}
+
+function createBlock(x, y, z, type) {
+  const geo = new THREE.BoxGeometry(BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+  const mesh = new THREE.Mesh(geo, materials[type] || materials.dirt);
+  mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+  mesh.userData = { x, y, z, type };
+  scene.add(mesh);
+  return mesh;
+}
+
+function generateWorld() {
+  for (let x = -WORLD_SIZE; x < WORLD_SIZE; x++) {
+    for (let z = -WORLD_SIZE; z < WORLD_SIZE; z++) {
+      const h = getHeight(x, z);
+      heightMap[`${x},${z}`] = h;
+
+      // stone + dirt + grass
+      for (let y = 0; y < h; y++) {
+        let type = "stone";
+        if (y > h-4) type = "dirt";
+        if (y === h-1) type = "grass";
+        createBlock(x, y, z, type);
+      }
+
+      // occasional trees
+      if (Math.random() < 0.03 && h > 4) {
+        const treeHeight = 4 + Math.floor(Math.random()*3);
+        // trunk
+        for (let y = h; y < h + treeHeight; y++) {
+          createBlock(x, y, z, "log");
+        }
+        // leaves
+        for (let ly = -2; ly <= 2; ly++) {
+          for (let lx = -2; lx <= 2; lx++) {
+            for (let lz = -2; lz <= 2; lz++) {
+              if (Math.abs(lx) + Math.abs(ly) + Math.abs(lz) <= 4 + Math.random()*1.5) {
+                if (Math.random() < 0.85) {
+                  createBlock(x + lx, h + treeHeight + ly - 1, z + lz, "leaves");
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+generateWorld();
+
+// ────────────────────────────────────────────────
+// PLAYER & CONTROLS
+camera.position.set(0, 18, 12);
+camera.lookAt(0, 10, 0);
+
+let velocityY = 0;
+const GRAVITY = -0.018;
+const JUMP = 0.38;
+const MOVE_SPEED = 0.14;
+let onGround = false;
+let selectedSlot = 0;
+
+const keys = {};
+document.addEventListener("keydown", e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key === "i" || e.key === "I") {
+    const inv = document.getElementById("inventory");
+    inv.style.display = inv.style.display === "block" ? "none" : "block";
+  }
+});
+document.addEventListener("keyup",   e => keys[e.key.toLowerCase()] = false);
+
+// Pointer lock
+document.body.addEventListener("click", () => {
+  document.body.requestPointerLock();
+});
+
+let yaw = 0, pitch = 0;
+document.addEventListener("mousemove", e => {
+  if (document.pointerLockElement === document.body) {
+    yaw   -= e.movementX * 0.0018;
+    pitch -= e.movementY * 0.0018;
+    pitch = Math.max(-Math.PI/2 + 0.05, Math.min(Math.PI/2 - 0.05, pitch));
+    camera.rotation.set(pitch, yaw, 0, 'YXZ');
+  }
+});
+
+// ────────────────────────────────────────────────
+// Raycaster for mining / placing
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2(0,0);
+
+// Inventory / Hotbar
+let inventory = {
+  dirt:   64,
+  stone:  0,
+  log:    0,
+  planks: 0,
+  stick:  0,
+  "wooden_pickaxe": 1,
+};
+
+const hotbarItems = ["dirt", "stone", "log", "planks", "wooden_pickaxe"];
+const hotbarCounts = [64, 0, 0, 0, 1];
+
+function updateHotbar() {
+  const hb = document.getElementById("hotbar");
+  hb.innerHTML = "";
+  hotbarItems.forEach((item, i) => {
+    const slot = document.createElement("div");
+    slot.className = "slot";
+    if (i === selectedSlot) slot.classList.add("selected");
+
+    if (inventory[item] > 0 || item.includes("pickaxe")) {
+      slot.textContent = item[0].toUpperCase();
+      if (hotbarCounts[i] > 1) {
+        const cnt = document.createElement("div");
+        cnt.className = "count";
+        cnt.textContent = hotbarCounts[i];
+        slot.appendChild(cnt);
+      }
+    }
+    hb.appendChild(slot);
+  });
+}
+
+updateHotbar();
+
+// Mouse wheel to change slot
+window.addEventListener("wheel", e => {
+  if (e.deltaY > 0) selectedSlot = (selectedSlot + 1) % hotbarItems.length;
+  else selectedSlot = (selectedSlot - 1 + hotbarItems.length) % hotbarItems.length;
+  updateHotbar();
+});
+
+// Click handlers
+document.addEventListener("mousedown", e => {
+  if (document.pointerLockElement !== document.body) return;
+  if (e.button === 0) { // left = mine
+    raycaster.setFromCamera(pointer, camera);
+    const intersects = raycaster.intersectObjects(scene.children);
+    if (intersects.length > 0) {
+      const obj = intersects[0].object;
+      if (obj.userData.type) {
+        const {x,y,z,type} = obj.userData;
+        scene.remove(obj);
+
+        // Give item
+        if (type === "grass") inventory.dirt   = (inventory.dirt   || 0) + 1;
+        else if (type === "dirt")  inventory.dirt   = (inventory.dirt   || 0) + 1;
+        else if (type === "stone") {
+          if (hotbarItems[selectedSlot] === "wooden_pickaxe") {
+            inventory.stone = (inventory.stone || 0) + 1;
+          }
+        }
+        else if (type === "log")   inventory.log    = (inventory.log    || 0) + 1;
+        else if (type === "leaves") {
+          if (Math.random() < 0.1) inventory.log = (inventory.log || 0) + 1;
+        }
+
+        updateHotbar();
+      }
+    }
+  }
+  else if (e.button === 2) { // right = place
+    e.preventDefault();
+    raycaster.setFromCamera(pointer, camera);
+    const intersects = raycaster.intersectObjects(scene.children);
+    if (intersects.length > 0) {
+      const hit = intersects[0];
+      const normal = hit.face.normal.clone();
+      const pos = hit.object.position.clone().sub(new THREE.Vector3(0.5,0.5,0.5));
+
+      const placeX = Math.round(pos.x + normal.x);
+      const placeY = Math.round(pos.y + normal.y);
+      const placeZ = Math.round(pos.z + normal.z);
+
+      const item = hotbarItems[selectedSlot];
+      if (inventory[item] > 0 || item.includes("pickaxe")) {
+        if (item === "dirt")   createBlock(placeX, placeY, placeZ, "dirt");
+        if (item === "stone")  createBlock(placeX, placeY, placeZ, "stone");
+        if (item === "log")    createBlock(placeX, placeY, placeZ, "log");
+        if (item === "planks") createBlock(placeX, placeY, placeZ, "planks");
+
+        if (!item.includes("pickaxe")) {
+          inventory[item]--;
+          hotbarCounts[selectedSlot] = inventory[item];
+          if (inventory[item] <= 0) {
+            hotbarItems[selectedSlot] = null;
+          }
+          updateHotbar();
+        }
+      }
+    }
+  }
+});
+
+// Prevent right-click menu
+document.addEventListener("contextmenu", e => e.preventDefault());
+
+// ────────────────────────────────────────────────
+// Crafting
+function craft(recipe) {
+  if (recipe === "planks" && inventory.log >= 1) {
+    inventory.log--;
+    inventory.planks = (inventory.planks || 0) + 4;
+  }
+  else if (recipe === "stick" && inventory.planks >= 2) {
+    inventory.planks -= 2;
+    inventory.stick = (inventory.stick || 0) + 4;
+  }
+  else if (recipe === "wooden_pickaxe" && inventory.planks >= 3 && inventory.stick >= 2) {
+    inventory.planks -= 3;
+    inventory.stick   -= 2;
+    inventory["wooden_pickaxe"] = (inventory["wooden_pickaxe"] || 0) + 1;
+  }
+  updateHotbar();
+}
+
+// ────────────────────────────────────────────────
+function update() {
+  // Movement
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  forward.y = 0; forward.normalize();
+
+  const right = new THREE.Vector3();
+  right.crossVectors(forward, new THREE.Vector3(0,1,0)).normalize();
+
+  if (keys["w"]) camera.position.addScaledVector(forward,  MOVE_SPEED);
+  if (keys["s"]) camera.position.addScaledVector(forward, -MOVE_SPEED);
+  if (keys["a"]) camera.position.addScaledVector(right,   -MOVE_SPEED);
+  if (keys["d"]) camera.position.addScaledVector(right,    MOVE_SPEED);
+
+  // Gravity & jump
+  velocityY += GRAVITY;
+  camera.position.y += velocityY;
+
+  const bx = Math.round(camera.position.x - 0.5);
+  const bz = Math.round(camera.position.z - 0.5);
+  const groundY = heightMap[`${bx},${bz}`] ?? -10;
+
+  if (camera.position.y <= groundY + 1.7) {
+    camera.position.y = groundY + 1.7;
+    velocityY = 0;
+    onGround = true;
+  } else {
+    onGround = false;
+  }
+
+  if (keys[" "] && onGround) {
+    velocityY = JUMP;
+    onGround = false;
+  }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+</script>
+</body>
+</html>

@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>PandaCraft ULTRA</title>
+<style>
+body{margin:0;overflow:hidden;background:black;font-family:Arial}
+#crosshair{
+position:absolute;top:50%;left:50%;
+transform:translate(-50%,-50%);
+color:white;font-size:22px;pointer-events:none}
+#stats{
+position:absolute;bottom:10px;left:10px;color:white}
+#inventory{
+position:absolute;top:50%;left:50%;
+transform:translate(-50%,-50%);
+background:rgba(30,30,30,.95);
+padding:20px;border-radius:10px;
+display:none;color:white;
+max-height:70vh;overflow:auto}
+.slot{
+width:50px;height:50px;
+background:rgba(255,255,255,.15);
+border:2px solid #444;
+display:flex;align-items:center;justify-content:center;
+position:relative}
+.count{
+position:absolute;bottom:2px;right:4px;font-size:12px}
+#pause{
+position:absolute;top:10px;right:10px;
+background:rgba(0,0,0,.7);
+padding:10px;border-radius:6px;
+display:none;color:white}
+</style>
+</head>
+<body>
+
+<div id="crosshair">+</div>
+<div id="stats">
+❤️ <span id="hp">20</span>
+&nbsp; 🍗 <span id="hunger">20</span>
+&nbsp; 🛡 <span id="armor">0</span>
+</div>
+
+<div id="inventory">
+<h2>Inventory (26)</h2>
+<div id="invSlots" style="display:grid;grid-template-columns:repeat(13,55px);gap:6px;"></div>
+</div>
+
+<div id="pause">Paused (ESC to resume)</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160/build/three.min.js"></script>
+<script>
+
+// SCENE
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,1000);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,.4));
+const sun=new THREE.DirectionalLight(0xffffff,1);
+scene.add(sun);
+
+// MATERIALS
+const materials={
+grass:new THREE.MeshLambertMaterial({color:0x44cc44}),
+dirt:new THREE.MeshLambertMaterial({color:0x8b5a2b}),
+stone:new THREE.MeshLambertMaterial({color:0x777777}),
+iron:new THREE.MeshLambertMaterial({color:0xd8af93}),
+diamond:new THREE.MeshLambertMaterial({color:0x00ffff}),
+lava:new THREE.MeshBasicMaterial({color:0xff3300}),
+water:new THREE.MeshBasicMaterial({color:0x3366ff,transparent:true,opacity:.6}),
+wood:new THREE.MeshLambertMaterial({color:0x8b5a2b}),
+glass:new THREE.MeshBasicMaterial({color:0x88ccff,transparent:true,opacity:.4})
+};
+
+const BLOCK=1,CHUNK=16;
+let blocks=[],mobs=[],animals=[],fluids=[];
+let loadedChunks={};
+let spawnPoint=new THREE.Vector3(0,20,0);
+
+// PLAYER STATS
+let health=20,hunger=20,armor=0;
+function updateStats(){
+hp.textContent=Math.max(0,Math.floor(health));
+hungerEl.textContent=hunger;
+armorEl.textContent=armor;
+}
+const hp=document.getElementById("hp");
+const hungerEl=document.getElementById("hunger");
+const armorEl=document.getElementById("armor");
+
+// INVENTORY
+const MAX=26;
+let inventory=new Array(MAX).fill(null);
+function addItem(type,count=1){
+for(let i=0;i<MAX;i++){
+if(inventory[i]&&inventory[i].type===type&&inventory[i].count<64){
+inventory[i].count+=count;updateInv();return;}
+}
+for(let i=0;i<MAX;i++){
+if(!inventory[i]){
+inventory[i]={type,count};updateInv();return;}
+}
+}
+function updateInv(){
+const d=document.getElementById("invSlots");
+d.innerHTML="";
+for(let i=0;i<MAX;i++){
+const s=document.createElement("div");
+s.className="slot";
+if(inventory[i]){
+s.textContent=inventory[i].type[0].toUpperCase();
+const c=document.createElement("div");
+c.className="count";
+c.textContent=inventory[i].count;
+s.appendChild(c);}
+d.appendChild(s);}
+}
+
+// WORLD HEIGHT
+function getHeight(x,z){
+return Math.floor(Math.sin(x*.2)*Math.cos(z*.2)*3+6);
+}
+
+function createBlock(x,y,z,type){
+const geo=new THREE.BoxGeometry(1,1,1);
+const mesh=new THREE.Mesh(geo,materials[type]||materials.dirt);
+mesh.position.set(x+.5,y+.5,z+.5);
+mesh.userData={x,y,z,type};
+scene.add(mesh);blocks.push(mesh);
+if(type==="water"||type==="lava")fluids.push(mesh);
+return mesh;
+}
+
+// CHUNK LOADING
+function loadChunk(cx,cz){
+const key=`${cx},${cz}`;
+if(loadedChunks[key])return;
+loadedChunks[key]=true;
+for(let x=0;x<CHUNK;x++)
+for(let z=0;z<CHUNK;z++){
+const wx=cx*CHUNK+x;
+const wz=cz*CHUNK+z;
+const h=getHeight(wx,wz);
+for(let y=0;y<h;y++){
+let t="stone";
+if(y>h-4)t="dirt";
+if(y===h-1)t="grass";
+if(y<3&&Math.random()<.03)t="diamond";
+if(y<5&&Math.random()<.05)t="iron";
+createBlock(wx,y,wz,t);
+}
+}
+}
+
+// VILLAGE
+function generateVillage(x,z){
+for(let i=0;i<4;i++){
+let hx=x+i*6,hz=z;
+for(let y=0;y<4;y++){
+createBlock(hx,y,hz,"wood");
+createBlock(hx+3,y,hz,"wood");
+}
+}
+}
+generateVillage(30,30);
+
+// WEATHER
+let weather="clear",rain=[];
+function startRain(){
+weather="rain";
+for(let i=0;i<400;i++){
+const g=new THREE.BoxGeometry(.05,.5,.05);
+const m=new THREE.MeshBasicMaterial({color:0x66aaff});
+const drop=new THREE.Mesh(g,m);
+drop.position.set(
+camera.position.x+(Math.random()-.5)*40,
+camera.position.y+Math.random()*20,
+camera.position.z+(Math.random()-.5)*40);
+scene.add(drop);rain.push(drop);}
+}
+function stopRain(){
+rain.forEach(r=>scene.remove(r));
+rain=[];weather="clear";
+}
+
+// MOBS
+function spawnMob(x,z){
+const g=new THREE.BoxGeometry(1,2,1);
+const m=new THREE.MeshLambertMaterial({color:0x33aa33});
+const mob=new THREE.Mesh(g,m);
+mob.position.set(x,getHeight(x,z)+1,z);
+mob.userData.health=20;
+scene.add(mob);mobs.push(mob);
+}
+for(let i=0;i<5;i++)spawnMob(Math.random()*30-15,Math.random()*30-15);
+
+// ANIMALS
+function spawnAnimal(x,z){
+const g=new THREE.BoxGeometry(1.5,1,1);
+const m=new THREE.MeshLambertMaterial({color:0xffffff});
+const sheep=new THREE.Mesh(g,m);
+sheep.position.set(x,getHeight(x,z)+1,z);
+sheep.userData.dir=new THREE.Vector3();
+scene.add(sheep);animals.push(sheep);
+}
+for(let i=0;i<6;i++)spawnAnimal(Math.random()*30-15,Math.random()*30-15);
+
+// PLAYER MOVEMENT
+camera.position.set(0,15,10);
+let velocityY=0,onGround=false,keys={};
+const GRAV=-.02,JUMP=.35;
+
+document.addEventListener("keydown",e=>{
+keys[e.key.toLowerCase()]=true;
+
+if(e.key==="e"){
+inventory.style.display=
+inventory.style.display==="block"?"none":"block";
+}
+
+if(e.key==="Escape"){
+const paused=document.getElementById("pause");
+if(renderer.domElement.style.pointerEvents==="none"){
+renderer.domElement.style.pointerEvents="auto";
+paused.style.display="none";
+}else{
+renderer.domElement.style.pointerEvents="none";
+paused.style.display="block";
+}
+}
+});
+
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+document.body.onclick=()=>document.body.requestPointerLock();
+
+// LOOK
+let yaw=0,pitch=0;
+document.addEventListener("mousemove",e=>{
+if(document.pointerLockElement===document.body &&
+renderer.domElement.style.pointerEvents!=="none"){
+yaw-=e.movementX*.002;
+pitch-=e.movementY*.002;
+pitch=Math.max(-1.5,Math.min(1.5,pitch));
+camera.rotation.set(pitch,yaw,0,"YXZ");
+}
+});
+
+// RAYCAST MINING
+function raycastBlock(){
+const dir=new THREE.Vector3();
+camera.getWorldDirection(dir);
+const ray=new THREE.Ray(camera.position,dir);
+let hit=null;
+blocks.forEach(b=>{
+const box=new THREE.Box3().setFromObject(b);
+if(ray.intersectsBox(box))hit=b;
+});
+return hit;
+}
+
+document.body.addEventListener("click",()=>{
+if(document.pointerLockElement!==document.body)return;
+const b=raycastBlock();
+if(b){
+scene.remove(b);
+blocks=blocks.filter(x=>x!==b);
+addItem(b.userData.type,1);
+}
+});
+
+// UPDATE LOOP
+let time=0,hungerTimer=0;
+function update(){
+
+// CHUNKS
+const cx=Math.floor(camera.position.x/CHUNK);
+const cz=Math.floor(camera.position.z/CHUNK);
+for(let x=-1;x<=1;x++)
+for(let z=-1;z<=1;z++)
+loadChunk(cx+x,cz+z);
+
+// MOVE
+const f=new THREE.Vector3();
+camera.getWorldDirection(f);
+f.y=0;f.normalize();
+const r=new THREE.Vector3();
+r.crossVectors(f,new THREE.Vector3(0,1,0)).normalize();
+
+if(keys["w"])camera.position.addScaledVector(f,.15);
+if(keys["s"])camera.position.addScaledVector(f,-.15);
+if(keys["a"])camera.position.addScaledVector(r,-.15);
+if(keys["d"])camera.position.addScaledVector(r,.15);
+
+velocityY+=GRAV;
+camera.position.y+=velocityY;
+const ground=getHeight(Math.floor(camera.position.x),
+Math.floor(camera.position.z))+1.7;
+if(camera.position.y<=ground){
+camera.position.y=ground;velocityY=0;onGround=true;}
+if(keys[" "]&&onGround){velocityY=JUMP;}
+
+// HUNGER
+hungerTimer++;
+if(hungerTimer>600){
+hungerTimer=0;
+if(hunger>0)hunger--;
+else health--;
+updateStats();
+if(health<=0){
+camera.position.copy(spawnPoint);
+health=20;hunger=20;updateStats();
+}
+}
+
+// MOBS AI
+mobs.forEach(m=>{
+let dir=camera.position.clone().sub(m.position);
+dir.y=0;
+if(dir.length()<25){
+dir.normalize();
+m.position.addScaledVector(dir,.04);
+}
+if(m.position.distanceTo(camera.position)<1.8){
+let dmg=0.1-(armor*.02);
+if(dmg<0.02)dmg=0.02;
+health-=dmg;updateStats();
+}
+});
+
+// ANIMALS
+animals.forEach(a=>{
+if(Math.random()<.01)
+a.userData.dir.set(Math.random()-.5,0,Math.random()-.5).normalize();
+a.position.addScaledVector(a.userData.dir,.02);
+});
+
+// WEATHER
+if(Math.random()<.0005){
+weather==="clear"?startRain():stopRain();
+}
+rain.forEach(d=>{
+d.position.y-=.4;
+if(d.position.y<camera.position.y-5)
+d.position.y=camera.position.y+20;
+});
+
+// DAY NIGHT
+time+=.0015;
+let angle=time%(Math.PI*2);
+sun.position.set(Math.sin(angle)*100,
+Math.cos(angle)*100,50);
+sun.intensity=Math.max(.2,Math.cos(angle));
+scene.background=new THREE.Color()
+.setHSL(.6,.6,.5*Math.max(.2,Math.cos(angle)));
+
+}
+
+function animate(){
+requestAnimationFrame(animate);
+update();
+renderer.render(scene,camera);
+}
+
+animate();
+
+window.addEventListener("resize",()=>{
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+</body>
+</html>
