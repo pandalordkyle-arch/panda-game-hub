@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Panda Clash WARLORDS</title>
+<style>
+body { margin:0; overflow:hidden; font-family:Arial; }
+#menu {
+  position:absolute;
+  width:100vw; height:100vh;
+  background:#111;
+  color:white;
+  text-align:center;
+  padding-top:120px;
+}
+button { padding:8px 14px; margin:4px; }
+#hud {
+  position:absolute;
+  top:10px; left:10px;
+  background:rgba(0,0,0,0.6);
+  color:white;
+  padding:10px;
+}
+#skills {
+  position:absolute;
+  right:10px; top:10px;
+  background:rgba(0,0,0,0.6);
+  color:white;
+  padding:10px;
+}
+</style>
+</head>
+<body>
+
+<div id="menu">
+  <h1>PANDA CLASH WARLORDS</h1>
+  <button onclick="startGame()">ENTER WAR</button>
+</div>
+
+<div id="hud" style="display:none;">
+  Day: <span id="day">1</span><br>
+  Gold: <span id="gold">300</span><br>
+  Pandas: <span id="pandas">0</span>
+</div>
+
+<div id="skills" style="display:none;">
+  <b>Skill Tree</b><br>
+  <button onclick="upgrade('damage')">Damage</button>
+  <button onclick="upgrade('speed')">Speed</button>
+  <button onclick="upgrade('fireRate')">Fire Rate</button><br>
+  <button onclick="buyPanda()">Buy Panda (75)</button>
+  <button onclick="buildTurret()">Build Turret (150)</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<script>
+let scene, camera, renderer;
+let squad=[], enemies=[], bullets=[], turrets=[];
+let gold=300;
+let day=1;
+let isNight=false;
+let skills={ damage:1, speed:1, fireRate:1 };
+
+function startGame(){
+  document.getElementById("menu").style.display="none";
+  document.getElementById("hud").style.display="block";
+  document.getElementById("skills").style.display="block";
+  init();
+  animate();
+}
+
+function init(){
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(60,window.innerWidth/window.innerHeight,1,2000);
+  camera.position.set(0,40,70);
+  camera.lookAt(0,0,0);
+
+  renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  const ground=new THREE.Mesh(
+    new THREE.PlaneGeometry(400,400),
+    new THREE.MeshBasicMaterial({color:0x2e8b57,side:THREE.DoubleSide})
+  );
+  ground.rotation.x=-Math.PI/2;
+  scene.add(ground);
+
+  nextDay();
+}
+
+function toggleDayNight(){
+  isNight=!isNight;
+  scene.background=new THREE.Color(isNight?0x000022:0x87ceeb);
+}
+
+function nextDay(){
+  document.getElementById("day").innerText=day;
+  toggleDayNight();
+
+  let normal=5+day*2;
+  let special=Math.floor(day/2);
+  let raid=(day%5===0);
+
+  for(let i=0;i<normal;i++) spawnEnemy("normal");
+  for(let i=0;i<special;i++) spawnEnemy(["archer","tank","speed"][Math.floor(Math.random()*3)]);
+  if(raid) spawnEnemy("raidBoss");
+}
+
+function spawnEnemy(type){
+  let geo, color, health, speed;
+
+  if(type==="archer"){ geo=new THREE.ConeGeometry(3,6,6); color=0xffff00; health=120; speed=0.07; }
+  else if(type==="tank"){ geo=new THREE.BoxGeometry(6,6,6); color=0x555555; health=300; speed=0.04; }
+  else if(type==="speed"){ geo=new THREE.SphereGeometry(2); color=0x00ffff; health=80; speed=0.15; }
+  else if(type==="raidBoss"){ geo=new THREE.DodecahedronGeometry(10); color=0xff00ff; health=1500; speed=0.05; }
+  else { geo=new THREE.SphereGeometry(2); color=0xff0000; health=100; speed=0.08; }
+
+  const e=new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color}));
+  e.position.set(Math.random()*150-75,5,Math.random()*-150);
+  e.userData={health,speed,type};
+  scene.add(e);
+  enemies.push(e);
+}
+
+function buyPanda(){
+  if(gold<75)return;
+  gold-=75;
+
+  const body=new THREE.Mesh(
+    new THREE.BoxGeometry(3,4,3),
+    new THREE.MeshBasicMaterial({color:0xffffff})
+  );
+
+  // gun
+  const gun=new THREE.Mesh(
+    new THREE.BoxGeometry(3,0.5,0.5),
+    new THREE.MeshBasicMaterial({color:0x000000})
+  );
+  gun.position.set(2,0,0);
+  body.add(gun);
+
+  // armor
+  const armor=new THREE.Mesh(
+    new THREE.BoxGeometry(3.2,2,3.2),
+    new THREE.MeshBasicMaterial({color:0x8888ff})
+  );
+  armor.position.y=-0.5;
+  body.add(armor);
+
+  body.position.set(Math.random()*20-10,2,Math.random()*20-10);
+  body.userData={cooldown:0};
+
+  scene.add(body);
+  squad.push(body);
+}
+
+function buildTurret(){
+  if(gold<150)return;
+  gold-=150;
+
+  const t=new THREE.Mesh(
+    new THREE.CylinderGeometry(2,2,8,8),
+    new THREE.MeshBasicMaterial({color:0x333333})
+  );
+  t.position.set(Math.random()*20-10,4,Math.random()*20-10);
+  scene.add(t);
+  turrets.push(t);
+}
+
+function shoot(from,target){
+  const b=new THREE.Mesh(
+    new THREE.SphereGeometry(0.5),
+    new THREE.MeshBasicMaterial({color:0xffff00})
+  );
+  b.position.copy(from.position);
+  b.userData={target};
+  scene.add(b);
+  bullets.push(b);
+}
+
+function pandaAI(p){
+  if(enemies.length===0)return;
+
+  let nearest=enemies[0];
+  let min=p.position.distanceTo(nearest.position);
+
+  enemies.forEach(e=>{
+    let d=p.position.distanceTo(e.position);
+    if(d<min){min=d; nearest=e;}
+  });
+
+  if(min>20){
+    let dir=new THREE.Vector3().subVectors(nearest.position,p.position).normalize();
+    p.position.add(dir.multiplyScalar(0.1*skills.speed));
+  } else {
+    if(p.userData.cooldown<=0){
+      shoot(p,nearest);
+      p.userData.cooldown=60/(skills.fireRate);
+    }
+  }
+
+  if(p.userData.cooldown>0)p.userData.cooldown--;
+}
+
+function turretAI(t){
+  if(enemies.length===0)return;
+  let e=enemies[0];
+  shoot(t,e);
+}
+
+function bulletAI(b){
+  if(!b.userData.target.parent){ scene.remove(b); return; }
+
+  let dir=new THREE.Vector3().subVectors(b.userData.target.position,b.position).normalize();
+  b.position.add(dir.multiplyScalar(1));
+
+  if(b.position.distanceTo(b.userData.target.position)<2){
+    b.userData.target.userData.health-=20*skills.damage;
+    if(b.userData.target.userData.health<=0){
+      gold+=50;
+      scene.remove(b.userData.target);
+      enemies=enemies.filter(e=>e.parent);
+    }
+    scene.remove(b);
+  }
+}
+
+function upgrade(type){
+  if(gold<200)return;
+  gold-=200;
+  skills[type]++;
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+
+  squad.forEach(p=>pandaAI(p));
+  turrets.forEach(t=>turretAI(t));
+  bullets.forEach(b=>bulletAI(b));
+
+  if(enemies.length===0){
+    day++;
+    nextDay();
+  }
+
+  document.getElementById("gold").innerText=gold;
+  document.getElementById("pandas").innerText=squad.length;
+
+  renderer.render(scene,camera);
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Panda Clash Army Update</title>
+<style>
+body {
+  margin: 0;
+  background: #0f0f0f;
+  color: white;
+  font-family: Arial;
+}
+
+#menu {
+  text-align: center;
+  padding-top: 80px;
+}
+
+#menu button {
+  padding: 15px 30px;
+  font-size: 20px;
+}
+
+#game {
+  display: none;
+}
+
+#hud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0,0,0,0.6);
+  padding: 10px;
+}
+
+#grid {
+  display: grid;
+  grid-template-columns: repeat(10, 60px);
+  grid-template-rows: repeat(10, 60px);
+  gap: 2px;
+  margin: 80px auto;
+  width: fit-content;
+}
+
+.tile {
+  width: 60px;
+  height: 60px;
+  background: #2b2b2b;
+  border: 1px solid #444;
+  transition: transform 0.2s;
+}
+
+.tile.animate {
+  transform: scale(1.1);
+}
+
+.building { background: #3a7bd5; }
+.enemy { background: #d53a3a; }
+.mine { background: #3ad55a; }
+.wall { background: #888; }
+.townhall { background: #3a7bd5; }
+
+#squadPanel {
+  position: fixed;
+  right: 20px;
+  top: 120px;
+  background: #222;
+  padding: 15px;
+  border: 2px solid #555;
+  width: 200px;
+}
+
+.panda {
+  font-size: 24px;
+}
+
+</style>
+</head>
+<body>
+
+<div id="menu">
+  <h1>Panda Clash Army</h1>
+  <button onclick="startGame()">Play</button>
+  <div>Top Score: <span id="topScore">0</span></div>
+</div>
+
+<div id="game">
+  <div id="hud">
+    <div>Health: <span id="health">100</span></div>
+    <div>Gold: <span id="gold">0</span></div>
+  </div>
+
+  <div id="grid"></div>
+
+  <div id="squadPanel">
+    <h3>Squad</h3>
+    <div id="squadList"></div>
+    <button onclick="spawnPanda()">Spawn Panda (50)</button>
+  </div>
+</div>
+
+<script>
+let gold = 200;
+let health = 100;
+let grid = document.getElementById("grid");
+let tiles = [];
+let enemies = [];
+let squad = [];
+
+function startGame() {
+  document.getElementById("menu").style.display = "none";
+  document.getElementById("game").style.display = "block";
+
+  grid.innerHTML = "";
+  tiles = [];
+
+  for (let i = 0; i < 100; i++) {
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    grid.appendChild(tile);
+    tiles.push({ el: tile, type: "empty", health: 100 });
+  }
+
+  spawnTownHall();
+  generateMines();
+  spawnAIEnemies();
+  updateHUD();
+}
+
+function updateHUD() {
+  document.getElementById("gold").textContent = gold;
+  document.getElementById("health").textContent = health;
+  updateSquadUI();
+}
+
+function spawnTownHall() {
+  const center = tiles[Math.floor(tiles.length / 2)];
+  center.el.classList.add("townhall");
+  center.type = "townhall";
+  center.health = 200;
+}
+
+function generateMines() {
+  for (let i = 0; i < 12; i++) {
+    const tile = tiles[Math.floor(Math.random() * tiles.length)];
+    tile.el.classList.add("mine");
+    tile.type = "mine";
+
+    tile.el.onclick = () => {
+      if (tile.type === "mine") {
+        gold += 25;
+        tile.type = "empty";
+        tile.el.classList.remove("mine");
+        updateHUD();
+
+        setTimeout(() => {
+          tile.el.classList.add("mine");
+          tile.type = "mine";
+        }, 5000);
+      }
+    };
+  }
+}
+
+function spawnAIEnemies() {
+  for (let i = 0; i < 6; i++) {
+    const tile = tiles[Math.floor(Math.random() * tiles.length)];
+    tile.el.classList.add("enemy");
+
+    setInterval(() => enemyAI(tile), 1500);
+  }
+}
+
+function enemyAI(enemyTile) {
+  const target = tiles.find(t => t.el.classList.contains("townhall")) || tiles[0];
+
+  if (target && Math.random() < 0.4) {
+    target.health -= 10;
+    if (target.health <= 0) {
+      target.el.classList.remove("townhall");
+      target.type = "empty";
+    }
+  }
+
+  if (Math.random() < 0.3) {
+    health -= 5;
+    updateHUD();
+    if (health <= 0) {
+      alert("You died!");
+      location.reload();
+    }
+  }
+
+  enemyTile.el.classList.remove("enemy");
+  const next = tiles[Math.floor(Math.random() * tiles.length)];
+  next.el.classList.add("enemy");
+  enemyTile = next;
+}
+
+function spawnPanda() {
+  if (gold < 50) return alert("Not enough gold!");
+  gold -= 50;
+
+  const panda = {
+    name: "Panda Soldier",
+    level: 1,
+    xp: 0,
+    inventory: [],
+    element: document.createElement("div")
+  };
+
+  panda.element.textContent = "🐼";
+  panda.element.className = "panda";
+  panda.element.style.position = "absolute";
+  panda.element.style.left = "50%";
+  panda.element.style.top = "50%";
+  document.body.appendChild(panda.element);
+
+  panda.move = setInterval(() => {
+    const x = (Math.random() - 0.5) * 5;
+    const y = (Math.random() - 0.5) * 5;
+    panda.element.style.left = `calc(50% + ${x}px)`;
+    panda.element.style.top = `calc(50% + ${y}px)`;
+
+    tiles.forEach(t => {
+      if (t.type === "enemy" && Math.random() < 0.05) {
+        t.el.classList.remove("enemy");
+        t.type = "empty";
+        gold += 20;
+        pandaGainXP(panda);
+        updateHUD();
+      }
+    });
+  }, 400);
+
+  squad.push(panda);
+  updateSquadUI();
+}
+
+function pandaGainXP(panda) {
+  panda.xp += 10;
+  if (panda.xp >= 100) {
+    panda.level++;
+    panda.xp = 0;
+    panda.inventory.push("level up bonus");
+    alert(`${panda.name} leveled up! Now level ${panda.level}`);
+  }
+}
+
+function updateSquadUI() {
+  const list = document.getElementById("squadList");
+  list.innerHTML = squad.map((p, i) => `
+    <div>
+      🐼 ${p.name}<br>
+      Level: ${p.level} XP: ${p.xp}
+      <button onclick="removePanda(${i})">Dismiss</button>
+    </div>
+  `).join("");
+}
+
+function removePanda(index) {
+  const panda = squad[index];
+  if (panda) {
+    clearInterval(panda.move);
+    panda.element.remove();
+  }
+  squad.splice(index, 1);
+  updateSquadUI();
+}
+</script>
+
+</body>
+</html>

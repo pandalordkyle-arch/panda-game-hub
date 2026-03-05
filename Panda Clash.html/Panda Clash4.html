@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Panda Clash PRO</title>
+<style>
+body { margin:0; overflow:hidden; font-family:Arial; }
+#launcher { 
+  position:absolute; 
+  width:100vw; height:100vh; 
+  background:#111; 
+  color:white; 
+  text-align:center; 
+  padding-top:120px; 
+}
+button { padding:12px 20px; margin:5px; font-size:16px; }
+#hud {
+  position:absolute;
+  top:10px; left:10px;
+  background:rgba(0,0,0,0.6);
+  color:white;
+  padding:10px;
+}
+#ui {
+  position:absolute;
+  right:10px; top:10px;
+  background:rgba(0,0,0,0.6);
+  color:white;
+  padding:10px;
+}
+</style>
+</head>
+<body>
+
+<div id="launcher">
+  <h1>Panda Clash PRO</h1>
+  <button onclick="startGame()">Play</button>
+</div>
+
+<div id="hud" style="display:none;">
+  Gold: <span id="gold">200</span><br>
+  Pandas: <span id="pandas">0</span>
+</div>
+
+<div id="ui" style="display:none;">
+  <button onclick="buyPanda()">Buy Panda (50)</button>
+  <button onclick="buildHouse()">Build House (120)</button>
+  <button onclick="buildTower()">Build Tower (180)</button>
+  <button onclick="tradeWood()">Trade 5 Wood → 20 Gold</button>
+  <div id="inventory"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
+<script>
+let scene, camera, renderer;
+let squad=[], enemies=[], buildings=[];
+let inventory={ wood:10 };
+let gold=200;
+
+function startGame(){
+  document.getElementById("launcher").style.display="none";
+  document.getElementById("hud").style.display="block";
+  document.getElementById("ui").style.display="block";
+  init();
+  animate();
+}
+
+function init(){
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(60,window.innerWidth/window.innerHeight,1,500);
+  camera.position.set(0,25,45);
+  camera.lookAt(0,0,0);
+
+  renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  const ground=new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshBasicMaterial({color:0x2e8b57,side:THREE.DoubleSide})
+  );
+  ground.rotation.x=-Math.PI/2;
+  scene.add(ground);
+
+  spawnEnemies();
+  updateUI();
+}
+
+function spawnEnemies(){
+  for(let i=0;i<5;i++){
+    const e=new THREE.Mesh(
+      new THREE.SphereGeometry(2),
+      new THREE.MeshBasicMaterial({color:0xff0000})
+    );
+    e.position.set(Math.random()*60-30,2,Math.random()*-60);
+    e.userData={health:100};
+    scene.add(e);
+    enemies.push(e);
+  }
+}
+
+function buyPanda(){
+  if(gold<50)return alert("Not enough gold!");
+  gold-=50;
+
+  const p=new THREE.Mesh(
+    new THREE.BoxGeometry(2,3,2),
+    new THREE.MeshBasicMaterial({color:0xffffff})
+  );
+  p.position.set(Math.random()*10-5,1.5,Math.random()*10-5);
+  p.userData={speed:0.15,attack:2};
+
+  scene.add(p);
+  squad.push(p);
+  updateUI();
+}
+
+function buildHouse(){
+  if(gold<120)return alert("Need more gold!");
+  gold-=120;
+
+  const base=new THREE.Mesh(
+    new THREE.BoxGeometry(6,4,6),
+    new THREE.MeshBasicMaterial({color:0x8b4513})
+  );
+  base.position.set(Math.random()*20-10,2,Math.random()*20-10);
+
+  const roof=new THREE.Mesh(
+    new THREE.ConeGeometry(5,3,4),
+    new THREE.MeshBasicMaterial({color:0xaa0000})
+  );
+  roof.position.set(base.position.x,5,base.position.z);
+  roof.rotation.y=Math.PI/4;
+
+  scene.add(base);
+  scene.add(roof);
+  buildings.push(base);
+  inventory.wood+=3;
+
+  updateUI();
+}
+
+function buildTower(){
+  if(gold<180)return alert("Need more gold!");
+  gold-=180;
+
+  const tower=new THREE.Mesh(
+    new THREE.CylinderGeometry(3,3,12,8),
+    new THREE.MeshBasicMaterial({color:0x555555})
+  );
+  tower.position.set(Math.random()*20-10,6,Math.random()*20-10);
+
+  scene.add(tower);
+  buildings.push(tower);
+  updateUI();
+}
+
+function tradeWood(){
+  if(inventory.wood<5)return alert("Not enough wood!");
+  inventory.wood-=5;
+  gold+=20;
+  updateUI();
+}
+
+function pandaAI(p){
+  let nearest=null;
+  let minDist=9999;
+
+  enemies.forEach(e=>{
+    if(e.userData.health>0){
+      let d=p.position.distanceTo(e.position);
+      if(d<minDist){
+        minDist=d;
+        nearest=e;
+      }
+    }
+  });
+
+  if(nearest){
+    if(minDist>3){
+      let dir=new THREE.Vector3().subVectors(nearest.position,p.position).normalize();
+      p.position.add(dir.multiplyScalar(p.userData.speed));
+    }else{
+      nearest.userData.health-=p.userData.attack;
+      if(nearest.userData.health<=0){
+        scene.remove(nearest);
+        gold+=30;
+        inventory.wood+=2;
+      }
+    }
+  }
+}
+
+function updateUI(){
+  document.getElementById("gold").innerText=gold;
+  document.getElementById("pandas").innerText=squad.length;
+  document.getElementById("inventory").innerHTML=
+    "Wood: "+inventory.wood;
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  squad.forEach(p=>pandaAI(p));
+  renderer.render(scene,camera);
+}
+</script>
+
+</body>
+</html>

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Panda Clash</title>
+<style>
+body {
+  margin: 0;
+  background: #0f0f0f;
+  color: white;
+  font-family: Arial;
+}
+
+#menu {
+  text-align: center;
+  padding-top: 80px;
+}
+
+#menu button {
+  padding: 15px 30px;
+  font-size: 20px;
+}
+
+#game {
+  display: none;
+}
+
+#hud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(0,0,0,0.6);
+  padding: 10px;
+}
+
+#grid {
+  display: grid;
+  grid-template-columns: repeat(10, 60px);
+  grid-template-rows: repeat(10, 60px);
+  gap: 2px;
+  margin: 80px auto;
+  width: fit-content;
+}
+
+.tile {
+  width: 60px;
+  height: 60px;
+  background: #2b2b2b;
+  border: 1px solid #444;
+}
+
+.building { background: #3a7bd5; }
+.enemy { background: #d53a3a; }
+.mine { background: #3ad55a; }
+.wall { background: #888; }
+
+#actions {
+  text-align: center;
+  margin-top: 20px;
+}
+</style>
+</head>
+<body>
+
+<div id="menu">
+  <h1>Panda Clash</h1>
+  <button onclick="startGame()">Play</button>
+  <div>Top Score: <span id="topScore">0</span></div>
+</div>
+
+<div id="game">
+  <div id="hud">
+    <div>Gold: <span id="gold">0</span></div>
+    <div>Elixir: <span id="elixir">0</span></div>
+  </div>
+
+  <div id="grid"></div>
+
+  <div id="actions">
+    <button onclick="build('townhall')">Townhall (200)</button>
+    <button onclick="build('barracks')">Barracks (150)</button>
+    <button onclick="build('wall')">Wall (50)</button>
+    <button onclick="spawnTroop()">Spawn Troop (50)</button>
+    <button onclick="attack()">Attack Enemy</button>
+    <button onclick="saveBase()">Save Base</button>
+  </div>
+</div>
+
+<script>
+const socket = new WebSocket("ws://localhost:3000");
+let playerId = null;
+
+socket.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+
+  if (data.type === "welcome") {
+    playerId = data.id;
+  }
+
+  if (data.type === "attack") {
+    handleAttack(data.from, data.target);
+  }
+};
+
+let gold = 200;
+let elixir = 0;
+let topScore = localStorage.getItem("topScore") || 0;
+document.getElementById("topScore").textContent = topScore;
+
+let grid = document.getElementById("grid");
+let tiles = [];
+let buildMode = null;
+
+function startGame() {
+  document.getElementById("menu").style.display = "none";
+  document.getElementById("game").style.display = "block";
+
+  grid.innerHTML = "";
+  tiles = [];
+
+  for (let i = 0; i < 100; i++) {
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    tile.onclick = () => buildOnTile(tile);
+    grid.appendChild(tile);
+    tiles.push({ el: tile, type: "empty", health: 100 });
+  }
+
+  spawnEnemyBase();
+  generateMines();
+  updateHUD();
+}
+
+function updateHUD() {
+  document.getElementById("gold").textContent = gold;
+  document.getElementById("elixir").textContent = elixir;
+}
+
+function build(type) {
+  alert("Click a tile to build: " + type);
+  buildMode = type;
+}
+
+function buildOnTile(tile) {
+  if (!buildMode) return;
+
+  let cost = buildMode === "townhall" ? 200 :
+            buildMode === "barracks" ? 150 :
+            buildMode === "wall" ? 50 : 0;
+
+  if (gold < cost) {
+    alert("Not enough gold!");
+    return;
+  }
+
+  gold -= cost;
+  tile.classList.add(buildMode);
+  updateHUD();
+}
+
+function spawnTroop() {
+  if (gold < 50) return alert("Not enough gold");
+  gold -= 50;
+  updateHUD();
+
+  const troop = document.createElement("div");
+  troop.textContent = "🐼";
+  troop.style.position = "absolute";
+  troop.style.left = "50%";
+  troop.style.top = "50%";
+  document.body.appendChild(troop);
+
+  let x = 50, y = 50;
+  setInterval(() => {
+    x += (Math.random() - 0.5) * 5;
+    y += (Math.random() - 0.5) * 5;
+    troop.style.left = x + "%";
+    troop.style.top = y + "%";
+
+    // basic attack check
+    tiles.forEach(t => {
+      if (t.type === "enemy" && Math.random() < 0.01) {
+        t.el.classList.remove("enemy");
+        t.type = "empty";
+      }
+    });
+  }, 300);
+}
+
+function attack() {
+  const target = prompt("Enemy ID to attack:");
+  if (!target) return;
+
+  socket.send(JSON.stringify({
+    type: "attack",
+    target
+  }));
+}
+
+function handleAttack(from, target) {
+  alert("Base under attack from " + from);
+}
+
+function saveBase() {
+  const baseData = tiles.map(t => t.el.className);
+  localStorage.setItem("base", JSON.stringify(baseData));
+
+  if (playerId) {
+    socket.send(JSON.stringify({
+      type: "saveBase",
+      base: baseData
+    }));
+  }
+
+  alert("Base saved!");
+}
+
+function loadBase() {
+  const saved = JSON.parse(localStorage.getItem("base") || "[]");
+  saved.forEach((cls, i) => {
+    if (tiles[i]) tiles[i].el.className = cls;
+  });
+}
+
+function spawnEnemyBase() {
+  for (let i = 0; i < 20; i++) {
+    const tile = tiles[Math.floor(Math.random() * tiles.length)];
+    tile.el.classList.add("enemy");
+    tile.type = "enemy";
+  }
+}
+
+function generateMines() {
+  for (let i = 0; i < 10; i++) {
+    const tile = tiles[Math.floor(Math.random() * tiles.length)];
+    tile.el.classList.add("mine");
+    tile.type = "mine";
+  }
+}
+</script>
+
+</body>
+</html>

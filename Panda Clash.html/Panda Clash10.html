@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Panda Horror RTS – Final Working Edition</title>
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    background: black;
+    font-family: Arial;
+}
+
+#ui {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    color: white;
+    z-index: 10;
+    background: rgba(0,0,0,0.6);
+    padding: 10px;
+}
+
+button {
+    padding: 6px 10px;
+    margin: 2px;
+    background: #550000;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+#minimap {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    width: 200px;
+    height: 200px;
+    background: #111;
+    border: 2px solid red;
+}
+
+#gameover {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 20px;
+    display: none;
+    text-align: center;
+}
+</style>
+</head>
+<body>
+
+<div id="ui">
+<div>Day: <span id="day">1</span></div>
+<div>Gold: <span id="gold">500</span></div>
+<div>XP: <span id="xp">0</span></div>
+<div>Level: <span id="level">1</span></div>
+
+<button onclick="buyPanda()">Buy Panda (100)</button>
+<button onclick="setBuild('turret')">Build Turret (150)</button>
+<button onclick="setBuild('mine')">Build Mine (200)</button>
+<button onclick="upgrade('damage')">+Damage (300)</button>
+<button onclick="upgrade('armor')">+Armor (300)</button>
+<button onclick="upgrade('fire')">+Fire (300)</button>
+<button onclick="upgrade('speed')">+Speed (300)</button>
+
+<br>
+<button onclick="setCommand('attack')">Attack</button>
+<button onclick="setCommand('defend')">Defend</button>
+<button onclick="trade()">Trade Scrap</button>
+<button onclick="saveGame()">Save</button>
+<button onclick="loadGame()">Load</button>
+</div>
+
+<canvas id="minimap"></canvas>
+
+<div id="gameover">
+<h1>GAME OVER</h1>
+<button onclick="location.reload()">Restart</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// ==========================
+// ENGINE
+// ==========================
+
+let scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000000, 0.003);
+
+let camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+let renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+let clock = new THREE.Clock();
+
+// CAMERA
+let camAngleX = 0, camAngleY = 0, camDistance = 60;
+let camTarget = new THREE.Vector3(0,0,0);
+let mouseDown = false;
+
+document.addEventListener("mousedown",()=>mouseDown=true);
+document.addEventListener("mouseup",()=>mouseDown=false);
+
+document.addEventListener("mousemove",e=>{
+if(mouseDown){
+    camAngleY -= e.movementX*0.005;
+    camAngleX -= e.movementY*0.005;
+    camAngleX = Math.max(-1.2,Math.min(1.2,camAngleX));
+}});
+
+document.addEventListener("wheel",e=>{
+camDistance += e.deltaY*0.05;
+camDistance = Math.max(20,Math.min(120,camDistance));
+});
+
+let keys={};
+document.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+// LIGHTING
+let ambient = new THREE.AmbientLight(0x550000,0.4);
+scene.add(ambient);
+
+let sun = new THREE.DirectionalLight(0xffffff,1);
+sun.position.set(50,100,50);
+sun.castShadow=true;
+scene.add(sun);
+
+// GROUND (GRASS)
+let ground = new THREE.Mesh(
+new THREE.PlaneGeometry(500,500),
+new THREE.MeshStandardMaterial({color:0x228B22})
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// TOWN HALL
+let townHall = new THREE.Mesh(
+new THREE.BoxGeometry(12,12,12),
+new THREE.MeshStandardMaterial({color:0x330000})
+);
+townHall.position.y = 6;
+townHall.health = 1500;
+townHall.castShadow = true;
+scene.add(townHall);
+
+// ==========================
+// RPG STATE
+// ==========================
+
+let gold = 500;
+let day = 1;
+let xp = 0;
+let level = 1;
+let skill = {damage:1, armor:1, fire:1, speed:1};
+
+let pandas = [];
+let enemies = [];
+let bullets = [];
+let particles = [];
+let turrets = [];
+let mines = [];
+let inventory = {scrap:0};
+
+let command = "attack";
+let buildMode = null;
+
+// UI
+let goldSpan = document.getElementById("gold");
+let daySpan = document.getElementById("day");
+let xpSpan = document.getElementById("xp");
+let levelSpan = document.getElementById("level");
+
+function updateUI(){
+goldSpan.innerText = Math.floor(gold);
+daySpan.innerText = day;
+xpSpan.innerText = xp;
+levelSpan.innerText = level;
+}
+
+// ==========================
+// SAVE / LOAD
+// ==========================
+
+function saveGame(){
+let data = {gold, day, xp, level, skill};
+localStorage.setItem("pandaSave", JSON.stringify(data));
+alert("Game Saved");
+}
+
+function loadGame(){
+let data = JSON.parse(localStorage.getItem("pandaSave"));
+if(!data) return alert("No save found");
+
+gold = data.gold;
+day = data.day;
+xp = data.xp;
+level = data.level;
+skill = data.skill;
+
+updateUI();
+}
+
+// ==========================
+// SKILL TREE
+// ==========================
+
+function upgrade(type){
+if(gold < 300) return;
+gold -= 300;
+skill[type]++;
+updateUI();
+}
+
+// ==========================
+// TRADING
+// ==========================
+
+function trade(){
+if(inventory.scrap >= 5){
+inventory.scrap -= 5;
+gold += 50;
+updateUI();
+}
+}
+
+// ==========================
+// BUILD SYSTEM (GUI)
+// ==========================
+
+renderer.domElement.addEventListener("click", e=>{
+if(!buildMode) return;
+
+let ray = new THREE.Raycaster();
+let mouse = new THREE.Vector2(
+(e.clientX / window.innerWidth) * 2 - 1,
+-(e.clientY / window.innerHeight) * 2 + 1
+);
+
+ray.setFromCamera(mouse, camera);
+let hit = ray.intersectObject(ground);
+
+if(hit.length > 0){
+    let pos = hit[0].point;
+
+    if(buildMode === "turret") buyTurretAt(pos);
+    if(buildMode === "mine") buyMineAt(pos);
+
+    buildMode = null;
+}
+});
+
+function setBuild(mode){
+buildMode = mode;
+}
+
+// ==========================
+// PANDA SOLDIERS
+// ==========================
+
+function createPanda(x,z){
+let p = new THREE.Group();
+
+let body = new THREE.Mesh(
+new THREE.BoxGeometry(2,4,2),
+new THREE.MeshStandardMaterial({color:0x550000})
+);
+body.position.y = 4;
+body.castShadow = true;
+p.add(body);
+
+let head = new THREE.Mesh(
+new THREE.BoxGeometry(2,2,2),
+new THREE.MeshStandardMaterial({color:0x660000})
+);
+head.position.y = 7;
+head.castShadow = true;
+p.add(head);
+
+// eyes
+let eyeMat = new THREE.MeshBasicMaterial({color:0xff0000});
+let eye1 = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.1),eyeMat);
+let eye2 = eye1.clone();
+eye1.position.set(-0.4,7,1.05);
+eye2.position.set(0.4,7,1.05);
+p.add(eye1); p.add(eye2);
+
+// legs
+let legGeo = new THREE.BoxGeometry(0.7,3,0.7);
+let legMat = new THREE.MeshStandardMaterial({color:0x440000});
+
+p.leg1 = new THREE.Mesh(legGeo,legMat);
+p.leg2 = new THREE.Mesh(legGeo,legMat);
+
+p.leg1.position.set(-0.5,1.5,0);
+p.leg2.position.set(0.5,1.5,0);
+
+p.add(p.leg1);
+p.add(p.leg2);
+
+// gun
+p.gun = new THREE.Mesh(
+new THREE.BoxGeometry(2,0.3,0.3),
+new THREE.MeshStandardMaterial({color:0x222222})
+);
+p.gun.position.set(1.5,5,0);
+p.add(p.gun);
+
+p.position.set(x,0,z);
+p.health = 120;
+p.cool = 0;
+
+scene.add(p);
+pandas.push(p);
+}
+
+function buyPanda(){
+if(gold < 100) return;
+gold -= 100;
+updateUI();
+createPanda((Math.random()-0.5)*20,(Math.random()-0.5)*20);
+}
+
+// panda AI (movement)
+function pandaAI(p){
+p.cool -= clock.getDelta();
+
+if(enemies.length === 0) return;
+
+let target = enemies.reduce((a,b)=>
+p.position.distanceTo(a.position) < p.position.distanceTo(b.position) ? a : b
+);
+
+let dist = p.position.distanceTo(target.position);
+
+if(dist > 5){
+    let dir = new THREE.Vector3().subVectors(target.position, p.position).normalize();
+    p.position.add(dir.multiplyScalar(0.3));
+    p.lookAt(target.position);
+} else {
+    if(p.cool <= 0) shoot(p,target);
+}
+
+p.leg1.rotation.x = Math.sin(Date.now()*0.01)*0.8;
+p.leg2.rotation.x = -Math.sin(Date.now()*0.01)*0.8;
+}
+
+// ==========================
+// ENEMIES (MOVEMENT FIX)
+// ==========================
+
+function spawnEnemy(){
+let e = new THREE.Mesh(
+new THREE.BoxGeometry(2,4,2),
+new THREE.MeshStandardMaterial({color:0x003300})
+);
+e.position.set((Math.random()-0.5)*200,2,(Math.random()-0.5)*200);
+e.health = 50 + day*10;
+e.speed = 0.15 + day*0.01;
+scene.add(e);
+enemies.push(e);
+}
+
+function enemyAI(e){
+let dir = new THREE.Vector3().subVectors(townHall.position,e.position).normalize();
+e.position.add(dir.multiplyScalar(e.speed));
+
+if(e.position.distanceTo(townHall.position) < 8){
+    townHall.health -= 1;
+    if(townHall.health <= 0) gameOver();
+}
+}
+
+// boss
+function spawnBoss(){
+let b = new THREE.Mesh(
+new THREE.BoxGeometry(6,10,6),
+new THREE.MeshStandardMaterial({color:0x550000})
+);
+b.position.set((Math.random()-0.5)*200,5,(Math.random()-0.5)*200);
+b.health = 1200 + day*200;
+b.speed = 0.1;
+b.isBoss = true;
+scene.add(b);
+enemies.push(b);
+}
+
+// ==========================
+// COMBAT
+// ==========================
+
+function explode(pos){
+for(let i=0;i<20;i++){
+let p = new THREE.Mesh(
+new THREE.SphereGeometry(0.3),
+new THREE.MeshBasicMaterial({color:0xff0000})
+);
+p.position.copy(pos);
+p.velocity = new THREE.Vector3(
+(Math.random()-0.5)*2,
+Math.random()*2,
+(Math.random()-0.5)*2
+);
+scene.add(p);
+particles.push(p);
+}
+}
+
+function updateParticles(){
+particles.forEach((p,i)=>{
+p.position.add(p.velocity);
+p.velocity.y -= 0.05;
+if(p.position.y < 0){
+scene.remove(p);
+particles.splice(i,1);
+}
+});
+}
+
+function shoot(p,target){
+p.cool = 0.5;
+
+let flash = new THREE.PointLight(0xffaa00,2,10);
+flash.position.copy(p.gun.position);
+p.add(flash);
+setTimeout(()=>p.remove(flash),100);
+
+let b = new THREE.Mesh(
+new THREE.SphereGeometry(0.2),
+new THREE.MeshBasicMaterial({color:0xffff00})
+);
+b.position.copy(p.position);
+b.target = target;
+let dir = new THREE.Vector3().subVectors(target.position,p.position).normalize();
+b.velocity = dir.multiplyScalar(1.5 + skill.fire*0.2);
+scene.add(b);
+bullets.push(b);
+}
+
+function updateBullets(){
+bullets.forEach((b,i)=>{
+b.position.add(b.velocity);
+if(b.position.distanceTo(b.target.position) < 2){
+let dmg = 25 * skill.damage;
+b.target.health -= dmg;
+explode(b.target.position);
+scene.remove(b);
+bullets.splice(i,1);
+
+if(b.target.health <= 0){
+gold += b.target.isBoss ? 300 : 20;
+inventory.scrap += 1;
+xp += 10;
+updateUI();
+scene.remove(b.target);
+enemies.splice(enemies.indexOf(b.target),1);
+}
+}
+});
+}
+
+// ==========================
+// DEFENSE TURRET
+// ==========================
+
+function buyTurretAt(pos){
+if(gold < 150) return;
+gold -= 150;
+updateUI();
+
+let t = new THREE.Mesh(
+new THREE.CylinderGeometry(2,2,6,16),
+new THREE.MeshStandardMaterial({color:0x222222})
+);
+t.position.copy(pos);
+t.position.y = 3;
+scene.add(t);
+turrets.push(t);
+}
+
+function buyTurret(){
+setBuild("turret");
+}
+
+// ==========================
+// MINES
+// ==========================
+
+function buyMineAt(pos){
+if(gold < 200) return;
+gold -= 200;
+updateUI();
+
+let m = new THREE.Mesh(
+new THREE.CylinderGeometry(3,3,4,12),
+new THREE.MeshStandardMaterial({color:0x444444})
+);
+m.position.copy(pos);
+m.position.y = 2;
+scene.add(m);
+mines.push(m);
+}
+
+function buyMine(){
+setBuild("mine");
+}
+
+// mine income
+function mineIncome(){
+mines.forEach(m=> gold += 0.02);
+}
+
+// ==========================
+// GAME OVER
+// ==========================
+
+function gameOver(){
+document.getElementById("gameover").style.display="block";
+}
+
+// ==========================
+// MINIMAP
+// ==========================
+
+let minimap = document.getElementById("minimap");
+let ctx = minimap.getContext("2d");
+
+function updateMinimap(){
+ctx.fillStyle="#111";
+ctx.fillRect(0,0,200,200);
+
+ctx.fillStyle="red";
+ctx.fillRect(
+100 + townHall.position.x/2,
+100 + townHall.position.z/2,
+5,5
+);
+
+ctx.fillStyle="white";
+pandas.forEach(p=>{
+ctx.fillRect(
+100 + p.position.x/2,
+100 + p.position.z/2,
+3,3
+);
+});
+
+ctx.fillStyle="green";
+enemies.forEach(e=>{
+ctx.fillRect(
+100 + e.position.x/2,
+100 + e.position.z/2,
+3,3
+);
+});
+}
+
+// ==========================
+// GAME LOOP
+// ==========================
+
+let spawnTimer = 0;
+let dayTimer = 0;
+
+function animate(){
+requestAnimationFrame(animate);
+let delta = clock.getDelta();
+
+// day
+spawnTimer += delta;
+dayTimer += delta;
+
+if(spawnTimer > (2 - day*0.05)){
+spawnEnemy();
+spawnTimer = 0;
+}
+
+if(dayTimer > 30){
+day++;
+if(day % 5 === 0) spawnBoss();
+dayTimer = 0;
+updateUI();
+}
+
+// camera
+let speed = 0.5;
+if(keys["w"]) camTarget.z -= speed;
+if(keys["s"]) camTarget.z += speed;
+if(keys["a"]) camTarget.x -= speed;
+if(keys["d"]) camTarget.x += speed;
+
+camera.position.x = camTarget.x + Math.sin(camAngleY)*camDistance;
+camera.position.z = camTarget.z + Math.cos(camAngleY)*camDistance;
+camera.position.y = camTarget.y + Math.sin(camAngleX)*camDistance + 20;
+camera.lookAt(camTarget);
+
+// AI
+pandas.forEach(p => pandaAI(p));
+enemies.forEach(e => enemyAI(e));
+
+// systems
+updateBullets();
+updateParticles();
+updateMinimap();
+updateUI();
+mineIncome();
+
+renderer.render(scene,camera);
+}
+
+updateUI();
+animate();
+
+</script>
+</body>
+</html>

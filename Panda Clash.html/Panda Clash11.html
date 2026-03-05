@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Panda RTS Mega Final</title>
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+    background: black;
+    font-family: Arial;
+}
+
+#ui {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    color: white;
+    z-index: 10;
+    background: rgba(0,0,0,0.6);
+    padding: 10px;
+}
+
+button {
+    padding: 6px 10px;
+    margin: 2px;
+    background: #550000;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+#minimap {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    width: 200px;
+    height: 200px;
+    background: #111;
+    border: 2px solid red;
+}
+
+#selectionBox {
+    position: absolute;
+    border: 2px solid red;
+    pointer-events: none;
+}
+
+#gameover {
+    position: absolute;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 20px;
+    display: none;
+    text-align: center;
+}
+</style>
+</head>
+<body>
+
+<div id="ui">
+<div>Day: <span id="day">1</span></div>
+<div>Gold: <span id="gold">500</span></div>
+
+<button onclick="setBuild('wall')">Build Wall (50)</button>
+<button onclick="setBuild('barracks')">Build Barracks (200)</button>
+<button onclick="setCommand('attack')">Attack Move</button>
+<button onclick="setCommand('defend')">Defend</button>
+<button onclick="setCommand('repair')">Repair</button>
+<button onclick="saveGame()">Save Base</button>
+<button onclick="loadGame()">Load Base</button>
+</div>
+
+<canvas id="minimap"></canvas>
+<div id="gameover">
+<h1>GAME OVER</h1>
+<button onclick="location.reload()">Restart</button>
+</div>
+
+<div id="selectionBox"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+// ==========================
+// ENGINE
+// ==========================
+
+let scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000000, 0.003);
+
+let camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+let renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+let clock = new THREE.Clock();
+
+// CAMERA
+let camAngleX = 0, camAngleY = 0, camDistance = 60;
+let camTarget = new THREE.Vector3(0,0,0);
+let mouseDown = false;
+
+document.addEventListener("mousedown",()=>mouseDown=true);
+document.addEventListener("mouseup",()=>mouseDown=false);
+
+document.addEventListener("mousemove",e=>{
+if(mouseDown){
+    camAngleY -= e.movementX*0.005;
+    camAngleX -= e.movementY*0.005;
+    camAngleX = Math.max(-1.2,Math.min(1.2,camAngleX));
+}});
+
+document.addEventListener("wheel",e=>{
+camDistance += e.deltaY*0.05;
+camDistance = Math.max(20,Math.min(120,camDistance));
+});
+
+let keys={};
+document.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+// LIGHTING
+let ambient = new THREE.AmbientLight(0x550000,0.4);
+scene.add(ambient);
+
+let sun = new THREE.DirectionalLight(0xffffff,1);
+sun.position.set(50,100,50);
+sun.castShadow=true;
+scene.add(sun);
+
+// GROUND (GRASS)
+let ground = new THREE.Mesh(
+new THREE.PlaneGeometry(500,500),
+new THREE.MeshStandardMaterial({color:0x228B22})
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ==========================
+// RTS STATE
+// ==========================
+
+let gold = 500;
+let day = 1;
+
+let pandas = [];
+let enemies = [];
+let walls = [];
+let barracks = [];
+let selected = [];
+let buildMode = null;
+let command = "attack";
+
+// UI
+let goldSpan = document.getElementById("gold");
+let daySpan = document.getElementById("day");
+
+function updateUI(){
+goldSpan.innerText = Math.floor(gold);
+daySpan.innerText = day;
+}
+
+// ==========================
+// SAVE / LOAD BASE LAYOUT
+// ==========================
+
+function saveGame(){
+let data = {
+    gold,
+    day,
+    walls: walls.map(w => w.position),
+    barracks: barracks.map(b => b.position),
+    units: pandas.map(p => p.position)
+};
+
+localStorage.setItem("pandaRTS", JSON.stringify(data));
+alert("Base Saved");
+}
+
+function loadGame(){
+let data = JSON.parse(localStorage.getItem("pandaRTS"));
+if(!data) return alert("No save");
+
+gold = data.gold;
+day = data.day;
+updateUI();
+
+// clear old
+walls.forEach(w => scene.remove(w));
+barracks.forEach(b => scene.remove(b));
+pandas.forEach(p => scene.remove(p));
+
+walls = [];
+barracks = [];
+pandas = [];
+
+// restore walls
+data.walls.forEach(pos=>{
+    let w = new THREE.Mesh(
+        new THREE.BoxGeometry(6,3,1),
+        new THREE.MeshStandardMaterial({color:0x555555})
+    );
+    w.position.copy(pos);
+    scene.add(w);
+    walls.push(w);
+});
+
+// restore barracks
+data.barracks.forEach(pos=>{
+    let b = new THREE.Mesh(
+        new THREE.BoxGeometry(8,6,8),
+        new THREE.MeshStandardMaterial({color:0x663300})
+    );
+    b.position.copy(pos);
+    scene.add(b);
+    barracks.push(b);
+});
+
+// restore units
+data.units.forEach(pos=>{
+    createPanda(pos.x, pos.z);
+});
+
+alert("Base Loaded");
+}
+
+// ==========================
+// BUILD SYSTEM
+// ==========================
+
+let selectionBox = document.getElementById("selectionBox");
+let selecting = false;
+let selectStart = new THREE.Vector2();
+let selectEnd = new THREE.Vector2();
+
+renderer.domElement.addEventListener("mousedown", e=>{
+    selecting = true;
+    selectStart.set(e.clientX, e.clientY);
+});
+
+renderer.domElement.addEventListener("mousemove", e=>{
+    if(!selecting) return;
+
+    selectEnd.set(e.clientX, e.clientY);
+
+    let x = Math.min(selectStart.x, selectEnd.x);
+    let y = Math.min(selectStart.y, selectEnd.y);
+    let w = Math.abs(selectStart.x - selectEnd.x);
+    let h = Math.abs(selectStart.y - selectEnd.y);
+
+    selectionBox.style.left = x + "px";
+    selectionBox.style.top = y + "px";
+    selectionBox.style.width = w + "px";
+    selectionBox.style.height = h + "px";
+});
+
+renderer.domElement.addEventListener("mouseup", ()=>{
+    selecting = false;
+    selectionBox.style.width = 0;
+    selectUnits();
+});
+
+function setBuild(mode){
+buildMode = mode;
+}
+
+renderer.domElement.addEventListener("click", e=>{
+if(!buildMode) return;
+
+let ray = new THREE.Raycaster();
+let mouse = new THREE.Vector2(
+(e.clientX / window.innerWidth) * 2 - 1,
+-(e.clientY / window.innerHeight) * 2 + 1
+);
+
+ray.setFromCamera(mouse, camera);
+let hit = ray.intersectObject(ground);
+
+if(hit.length > 0){
+    let pos = hit[0].point;
+
+    if(buildMode === "wall") buildWall(pos);
+    if(buildMode === "barracks") buildBarracks(pos);
+
+    buildMode = null;
+}
+});
+
+// selection
+function selectUnits(){
+selected = [];
+
+let rect = {
+    left: Math.min(selectStart.x, selectEnd.x),
+    right: Math.max(selectStart.x, selectEnd.x),
+    top: Math.min(selectStart.y, selectEnd.y),
+    bottom: Math.max(selectStart.y, selectEnd.y)
+};
+
+pandas.forEach(p=>{
+    let screen = p.position.clone().project(camera);
+    let sx = (screen.x * 0.5 + 0.5) * window.innerWidth;
+    let sy = ( -screen.y * 0.5 + 0.5) * window.innerHeight;
+
+    if(sx > rect.left && sx < rect.right && sy > rect.top && sy < rect.bottom){
+        selected.push(p);
+    }
+});
+}
+
+// buildings
+function buildWall(pos){
+if(gold < 50) return;
+gold -= 50;
+updateUI();
+
+let w = new THREE.Mesh(
+new THREE.BoxGeometry(6,3,1),
+new THREE.MeshStandardMaterial({color:0x555555})
+);
+w.position.copy(pos);
+w.position.y = 1.5;
+scene.add(w);
+walls.push(w);
+}
+
+function buildBarracks(pos){
+if(gold < 200) return;
+gold -= 200;
+updateUI();
+
+let b = new THREE.Mesh(
+new THREE.BoxGeometry(8,6,8),
+new THREE.MeshStandardMaterial({color:0x663300})
+);
+b.position.copy(pos);
+b.position.y = 3;
+b.spawnTimer = 0;
+scene.add(b);
+barracks.push(b);
+}
+
+// unit production
+function updateBarracks(){
+barracks.forEach(b=>{
+    b.spawnTimer += clock.getDelta();
+    if(b.spawnTimer > 10){
+        createPanda(b.position.x + 2, b.position.z + 2);
+        b.spawnTimer = 0;
+    }
+});
+}
+
+// repair
+function repairSelected(){
+selected.forEach(p=>{
+    if(p.health < 120 && gold >= 5){
+        gold -= 5;
+        p.health += 2;
+    }
+});
+updateUI();
+}
+
+// attack move
+function attackMove(){
+selected.forEach(p=>{
+    if(enemies.length === 0) return;
+    moveTowards(p, enemies[0], 0.3);
+});
+}
+
+// defend
+function defend(){
+selected.forEach(p=>{
+    moveTowards(p, ground, 0.1);
+});
+}
+
+function setCommand(mode){
+command = mode;
+}
+
+// ==========================
+// PANDA SOLDIERS
+// ==========================
+
+function createPanda(x,z){
+let p = new THREE.Group();
+
+let body = new THREE.Mesh(
+new THREE.BoxGeometry(2,4,2),
+new THREE.MeshStandardMaterial({color:0x550000})
+);
+body.position.y = 4;
+body.castShadow = true;
+p.add(body);
+
+let head = new THREE.Mesh(
+new THREE.BoxGeometry(2,2,2),
+new THREE.MeshStandardMaterial({color:0x660000})
+);
+head.position.y = 7;
+head.castShadow = true;
+p.add(head);
+
+// legs
+let legGeo = new THREE.BoxGeometry(0.7,3,0.7);
+let legMat = new THREE.MeshStandardMaterial({color:0x440000});
+
+p.leg1 = new THREE.Mesh(legGeo,legMat);
+p.leg2 = new THREE.Mesh(legGeo,legMat);
+
+p.leg1.position.set(-0.5,1.5,0);
+p.leg2.position.set(0.5,1.5,0);
+
+p.add(p.leg1);
+p.add(p.leg2);
+
+p.position.set(x,0,z);
+p.health = 120;
+p.cool = 0;
+
+scene.add(p);
+pandas.push(p);
+}
+
+function moveTowards(entity, target, speed){
+let dir = new THREE.Vector3().subVectors(target.position, entity.position);
+dir.y = 0;
+dir.normalize();
+
+let next = entity.position.clone().add(dir.clone().multiplyScalar(speed));
+
+// wall collision
+let blocked = walls.some(w => next.distanceTo(w.position) < 4);
+
+if(!blocked){
+    entity.position.copy(next);
+    entity.lookAt(target.position);
+}
+}
+
+// advanced AI
+function pandaAI(p){
+p.cool -= clock.getDelta();
+
+if(enemies.length === 0) return;
+
+let target = enemies[0];
+let dist = p.position.distanceTo(target.position);
+
+if(dist > 6){
+    moveTowards(p, target, 0.35);
+} else {
+    if(p.cool <= 0) shoot(p,target);
+}
+
+p.leg1.rotation.x = Math.sin(Date.now()*0.01)*0.8;
+p.leg2.rotation.x = -Math.sin(Date.now()*0.01)*0.8;
+}
+
+// ==========================
+// ENEMIES (VARIANTS & AI)
+// ==========================
+
+function spawnEnemy(){
+let type = Math.random();
+let geo = new THREE.BoxGeometry(2,4,2);
+let mat;
+let hp, speed;
+
+if(type < 0.5){
+    mat = new THREE.MeshStandardMaterial({color:0x003300});
+    hp = 50;
+    speed = 0.15;
+} else if(type < 0.8){
+    mat = new THREE.MeshStandardMaterial({color:0x552200});
+    hp = 150;
+    speed = 0.08;
+} else {
+    mat = new THREE.MeshStandardMaterial({color:0x330033});
+    hp = 40;
+    speed = 0.25;
+}
+
+let e = new THREE.Mesh(geo, mat);
+e.position.set((Math.random()-0.5)*200,2,(Math.random()-0.5)*200);
+e.health = hp + day*10;
+e.speed = speed + day*0.005;
+scene.add(e);
+enemies.push(e);
+}
+
+function enemyAI(e){
+let target = selected.length ? selected[0] : ground;
+moveTowards(e, target, e.speed);
+
+if(e.position.distanceTo(target.position) < 3){
+    if(target.health !== undefined){
+        target.health -= 1;
+    }
+}
+}
+
+function spawnBoss(){
+let b = new THREE.Mesh(
+new THREE.BoxGeometry(6,10,6),
+new THREE.MeshStandardMaterial({color:0x550000})
+);
+b.position.set((Math.random()-0.5)*200,5,(Math.random()-0.5)*200);
+b.health = 1200 + day*200;
+b.speed = 0.1;
+b.isBoss = true;
+scene.add(b);
+enemies.push(b);
+}
+
+// ==========================
+// GAME LOOP
+// ==========================
+
+let spawnTimer = 0;
+
+function animate(){
+requestAnimationFrame(animate);
+let delta = clock.getDelta();
+
+// spawn
+spawnTimer += delta;
+if(spawnTimer > 2){
+spawnEnemy();
+spawnTimer = 0;
+}
+
+// camera
+let speed = 0.5;
+if(keys["w"]) camTarget.z -= speed;
+if(keys["s"]) camTarget.z += speed;
+if(keys["a"]) camTarget.x -= speed;
+if(keys["d"]) camTarget.x += speed;
+
+camera.position.x = camTarget.x + Math.sin(camAngleY)*camDistance;
+camera.position.z = camTarget.z + Math.cos(camAngleY)*camDistance;
+camera.position.y = camTarget.y + Math.sin(camAngleX)*camDistance + 20;
+camera.lookAt(camTarget);
+
+// AI
+pandas.forEach(p => pandaAI(p));
+enemies.forEach(e => enemyAI(e));
+updateBarracks();
+updateUI();
+
+renderer.render(scene,camera);
+}
+
+updateUI();
+animate();
+
+</script>
+</body>
+</html>
