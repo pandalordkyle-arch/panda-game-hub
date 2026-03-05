@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <title>PandaLordKyle Game Hub ULTRA</title>
 
+<!-- SEO FOR GOOGLE -->
+<meta name="description" content="PandaLordKyle Game Hub - free online games, achievements, and playtime tracking">
+<meta name="keywords" content="game hub, free games, panda games, online games, game portal">
+<meta name="author" content="PandaLordKyle">
+
 <style>
 
 /* BACKGROUND */
@@ -226,6 +231,7 @@ border:none;
 
 <a class="link-btn" href="https://www.youtube.com/@pandalordkyleYT" target="_blank">▶ YouTube</a>
 <a class="link-btn" href="https://www.twitch.tv/pandalordkyle" target="_blank">🎮 Twitch</a>
+<a class="link-btn" href="https://pandalordkyle-arch.github.io/panda-game-hub/" target="_blank">🌐 Game Hub Online</a>
 
 </div>
 
