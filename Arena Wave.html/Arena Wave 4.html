@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OMNIVERSE DODGE - PRO MENU</title>
+
+<style>
+body {
+    margin: 0;
+    background: #050505;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+}
+
+#menu {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background: radial-gradient(circle, #111, #000);
+}
+
+#menu h1 {
+    font-size: 48px;
+    color: #0ff;
+}
+
+#nameInput {
+    padding: 10px;
+    font-size: 18px;
+    margin-top: 10px;
+}
+
+#skinSelect {
+    margin-top: 10px;
+}
+
+.skin {
+    display: inline-block;
+    width: 30px;
+    height: 30px;
+    margin: 5px;
+    border: 2px solid white;
+    cursor: pointer;
+}
+
+.skin.selected {
+    border: 3px solid #0ff;
+}
+
+#playBtn {
+    margin-top: 20px;
+    padding: 15px 40px;
+    font-size: 22px;
+    background: #0ff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+#topScore {
+    margin-top: 20px;
+    font-size: 18px;
+    color: #ff0;
+}
+
+/* GAME SCREEN */
+#gameScreen {
+    display: none;
+}
+
+header {
+    padding: 15px;
+    background: #111;
+    box-shadow: 0 0 15px #0ff;
+}
+
+canvas {
+    background: #000;
+    border: 2px solid #0ff;
+}
+</style>
+</head>
+
+<body>
+
+<!-- MENU -->
+<div id="menu">
+    <h1>🔥 OMNIVERSE DODGE 🔥</h1>
+    <p>Survive waves. Upgrade. Dominate.</p>
+
+    <input id="nameInput" placeholder="Enter your name">
+
+    <div id="skinSelect">
+        <p>Select Skin:</p>
+        <div id="skins"></div>
+    </div>
+
+    <button id="playBtn">▶ PLAY</button>
+
+    <div id="topScore">
+        Top Score: <span id="topScoreValue">0</span>
+    </div>
+</div>
+
+<!-- GAME -->
+<div id="gameScreen">
+
+<header>
+<h1 id="playerNameDisplay">Player</h1>
+<p>Waves | Inventory | Upgrades</p>
+</header>
+
+<canvas id="gameCanvas" width="800" height="500"></canvas>
+
+<div id="hud">
+<p id="healthText">Health: 100</p>
+<p id="scoreText">Score: 0 | Wave: 1</p>
+<p id="inventoryText">Inventory: []</p>
+</div>
+
+</div>
+
+<script>
+// MENU SETUP
+const menu = document.getElementById("menu");
+const gameScreen = document.getElementById("gameScreen");
+const playBtn = document.getElementById("playBtn");
+const nameInput = document.getElementById("nameInput");
+const playerNameDisplay = document.getElementById("playerNameDisplay");
+
+let topScore = localStorage.getItem("topScore") || 0;
+document.getElementById("topScoreValue").textContent = topScore;
+
+// LOAD NAME
+let playerName = localStorage.getItem("playerName") || "";
+nameInput.value = playerName;
+
+// SKINS
+const skins = ["#0ff", "#f00", "#0f0", "#ff0", "#f0f",
+              "#ff8800", "#00ff88", "#888", "#0088ff", "#ffffff"];
+
+let selectedSkin = localStorage.getItem("skin") || "#0ff";
+
+// BUILD SKIN SELECTOR
+const skinContainer = document.getElementById("skins");
+skins.forEach(color => {
+    const div = document.createElement("div");
+    div.className = "skin";
+    div.style.background = color;
+    if (color === selectedSkin) div.classList.add("selected");
+
+    div.onclick = () => {
+        selectedSkin = color;
+        localStorage.setItem("skin", color);
+
+        document.querySelectorAll(".skin").forEach(s => s.classList.remove("selected"));
+        div.classList.add("selected");
+    };
+
+    skinContainer.appendChild(div);
+});
+
+// PLAY BUTTON
+playBtn.addEventListener("click", () => {
+    playerName = nameInput.value || "Player";
+    localStorage.setItem("playerName", playerName);
+
+    menu.style.display = "none";
+    gameScreen.style.display = "block";
+
+    playerNameDisplay.textContent = playerName;
+    startGame();
+});
+
+// GAME CODE
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+let keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+// PLAYER
+let player;
+let enemies = [];
+let drops = [];
+let powerUps = [];
+let score = 0;
+let wave = 1;
+
+// START GAME
+function startGame() {
+    player = {
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        size: 20,
+        speed: 5,
+        health: 100,
+        bullets: [],
+        inventory: [],
+        upgrades: { damage: 1 }
+    };
+
+    enemies = [];
+    drops = [];
+    powerUps = [];
+    score = 0;
+    wave = 1;
+
+    gameLoop();
+}
+
+// MOVE
+function update() {
+    if (keys["ArrowUp"]) player.y -= player.speed;
+    if (keys["ArrowDown"]) player.y += player.speed;
+    if (keys["ArrowLeft"]) player.x -= player.speed;
+    if (keys["ArrowRight"]) player.x += player.speed;
+
+    player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
+    player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
+}
+
+// DRAW
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = selectedSkin;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// LOOP
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+</script>
+
+</body>
+</html>
