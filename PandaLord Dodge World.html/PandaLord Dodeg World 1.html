@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Panda Games: Try and Not Die - 4D Edition</title>
+<style>
+body {
+    margin:0;
+    overflow:hidden;
+    background:black;
+    color:white;
+    font-family:Arial, sans-serif;
+}
+
+#menu, #hud, #leaderboard, #chat {
+    position:absolute;
+    width:100%;
+    text-align:center;
+}
+
+#menu { top:20%; }
+
+#profile { margin-top:20px; }
+#avatarPicker { margin-top:10px; }
+
+.avatarBtn {
+    font-size:24px;
+    padding:8px;
+    margin:4px;
+    cursor:pointer;
+    border:2px solid #444;
+    background:#111;
+}
+.avatarBtn:hover { border-color:#00ff66; }
+
+button {
+    padding:12px 24px;
+    margin:6px;
+    font-size:18px;
+    background:#00ff66;
+    border:none;
+    border-radius:6px;
+    cursor:pointer;
+}
+button:hover { background:#00cc55; }
+
+input {
+    padding:6px;
+    width:80%;
+    border:1px solid #444;
+    background:#111;
+    color:white;
+}
+
+#hud {
+    top:10px;
+    left:10px;
+    width:auto;
+    text-align:left;
+}
+
+#leaderboard {
+    display:none;
+    top:18%;
+}
+
+#chat {
+    bottom:10px;
+    left:10px;
+    width:300px;
+    text-align:left;
+}
+
+#chatBox {
+    height:120px;
+    overflow-y:auto;
+    background:rgba(0,0,0,0.6);
+    padding:5px;
+    border:1px solid #333;
+}
+</style>
+</head>
+<body>
+
+<div id="menu">
+    <h1>Panda Games</h1>
+    <h2>Try and Not Die - 4D Edition</h2>
+
+    <div id="profile">
+        <div>Name: <span id="profileName"></span></div>
+        <div>Avatar: <span id="profileAvatar"></span></div>
+
+        <div id="avatarPicker">
+            <div>Pick Avatar:</div>
+            <button class="avatarBtn" onclick="setAvatar('🐼')">🐼</button>
+            <button class="avatarBtn" onclick="setAvatar('🤖')">🤖</button>
+            <button class="avatarBtn" onclick="setAvatar('😎')">😎</button>
+            <button class="avatarBtn" onclick="setAvatar('👾')">👾</button>
+            <button class="avatarBtn" onclick="setAvatar('🐉')">🐉</button>
+        </div>
+
+        <button onclick="changeName()">Change Name</button>
+    </div>
+
+    <div>
+        <h3>Theme</h3>
+        <button onclick="setTheme('neon')">Neon</button>
+        <button onclick="setTheme('dark')">Dark</button>
+        <button onclick="setTheme('fire')">Fire</button>
+    </div>
+
+    <button onclick="joinRoom()">JOIN ROOM</button>
+    <button onclick="showLeaderboard()">LEADERBOARD</button>
+</div>
+
+<div id="hud" style="display:none;">
+    Health: <span id="health">100</span> |
+    Level: <span id="level">1</span> |
+    Wave: <span id="wave">1</span> |
+    Score: <span id="score">0</span> |
+    Room: <span id="roomId"></span> |
+    Dim: <span id="dimension">0</span>
+</div>
+
+<div id="leaderboard">
+    <h2>LEADERBOARD (LOCAL)</h2>
+    <ul id="scores"></ul>
+    <button onclick="backToMenu()">BACK</button>
+</div>
+
+<div id="chat" style="display:none;">
+    <div id="chatBox"></div>
+    <input id="chatInput" placeholder="message..." onkeydown="if(event.key==='Enter') sendChat()">
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+/* ===== PROFILE ===== */
+let myId = localStorage.getItem("playerId");
+if (!myId) {
+    myId = Math.random().toString(36).substr(2,9);
+    localStorage.setItem("playerId", myId);
+}
+
+let profile = JSON.parse(localStorage.getItem("profile") || "null");
+if (!profile) {
+    profile = { name:"Player", avatar:"🐼" };
+    localStorage.setItem("profile", JSON.stringify(profile));
+}
+
+function refreshProfile() {
+    document.getElementById("profileName").innerText = profile.name;
+    document.getElementById("profileAvatar").innerText = profile.avatar;
+}
+
+function changeName() {
+    let name = prompt("Enter new name:");
+    if (!name) return;
+    profile.name = name;
+    localStorage.setItem("profile", JSON.stringify(profile));
+    refreshProfile();
+}
+
+function setAvatar(emoji) {
+    profile.avatar = emoji;
+    localStorage.setItem("profile", JSON.stringify(profile));
+    refreshProfile();
+}
+
+window.onload = refreshProfile;
+
+/* ===== THEME ===== */
+let theme = {
+    background: 0x000000,
+    ground1: 0x111111,
+    ground2: 0x222222,
+    player: 0xffffff,
+    block: 0xff3333
+};
+
+function setTheme(name) {
+    if (name === "neon") {
+        theme = {
+            background: 0x000000,
+            ground1: 0x111111,
+            ground2: 0x00ffcc,
+            player: 0x00ffcc,
+            block: 0xff00ff
+        };
+    }
+
+    if (name === "dark") {
+        theme = {
+            background: 0x050505,
+            ground1: 0x101010,
+            ground2: 0x202020,
+            player: 0xffffff,
+            block: 0xff3333
+        };
+    }
+
+    if (name === "fire") {
+        theme = {
+            background: 0x000000,
+            ground1: 0x220000,
+            ground2: 0x440000,
+            player: 0xff6600,
+            block: 0xff0000
+        };
+    }
+
+    if (scene) scene.background = new THREE.Color(theme.background);
+}
+
+/* ===== ROOM & CHAT ===== */
+let rooms = {};
+let roomId = null;
+
+function sendChat() {
+    const input = document.getElementById("chatInput");
+    const msg = input.value.trim();
+    if (!msg || !roomId) return;
+    input.value = "";
+
+    rooms[roomId].chat.push(`${profile.avatar} ${profile.name}: ${msg}`);
+    renderChat();
+}
+
+function renderChat() {
+    const box = document.getElementById("chatBox");
+    box.innerHTML = rooms[roomId].chat.map(m => `<div>${m}</div>`).join("");
+    box.scrollTop = box.scrollHeight;
+}
+
+window.joinRoom = function() {
+    roomId = prompt("Room name:");
+    if (!roomId) return;
+
+    if (!rooms[roomId]) rooms[roomId] = { players:{}, chat:[] };
+
+    rooms[roomId].players[myId] = {
+        name: profile.name,
+        avatar: profile.avatar,
+        score: 0,
+        health: 100,
+        level: 1
+    };
+
+    document.getElementById("menu").style.display = "none";
+    document.getElementById("hud").style.display = "block";
+    document.getElementById("chat").style.display = "block";
+    document.getElementById("roomId").innerText = roomId;
+
+    listenChat();
+    init();
+    animate();
+};
+
+/* ===== LEADERBOARD ===== */
+function saveScore() {
+    let board = JSON.parse(localStorage.getItem("board") || "[]");
+
+    board.push({
+        name: `${profile.avatar} ${profile.name}`,
+        score
+    });
+
+    board.sort((a,b) => b.score - a.score);
+    localStorage.setItem("board", JSON.stringify(board.slice(0,10)));
+}
+
+window.showLeaderboard = function() {
+    document.getElementById("menu").style.display = "none";
+    document.getElementById("leaderboard").style.display = "block";
+
+    let board = JSON.parse(localStorage.getItem("board") || "[]");
+    let list = document.getElementById("scores");
+    list.innerHTML = board.map(b => `<li>${b.name} - ${b.score}</li>`).join("");
+};
+
+window.backToMenu = function() {
+    document.getElementById("leaderboard").style.display = "none";
+    document.getElementById("menu").style.display = "block";
+};
+
+/* ===== GAME ===== */
+let scene, camera, renderer, player;
+let health = 100;
+let score = 0;
+let level = 1;
+let wave = 1;
+let blocks = [];
+let particles = [];
+let groundTiles = [];
+let portals = [];
+let gameRunning = false;
+
+let blockSpeed = 0.04;
+let spawnRate = 0.015;
+
+let playZone = 4;
+let minZone = 2.5;
+
+let dimension = 0;
+
+/* GROUND */
+function buildGround() {
+    for (let x = -5; x <= 5; x++) {
+        for (let z = -5; z <= 5; z++) {
+            let geo = new THREE.PlaneGeometry(1, 1);
+            let mat = new THREE.MeshStandardMaterial({
+                color: (x + z) % 2 ? theme.ground1 : theme.ground2,
+                roughness: 0.9
+            });
+
+            let tile = new THREE.Mesh(geo, mat);
+            tile.rotation.x = -Math.PI / 2;
+            tile.position.set(x, -3.2, z);
+
+            scene.add(tile);
+            groundTiles.push(tile);
+        }
+    }
+}
+
+/* INIT */
+function init() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(theme.background);
+
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    camera.position.z = 7;
+
+    renderer = new THREE.WebGLRenderer({ antialias:true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    document.body.appendChild(renderer.domElement);
+
+    let light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(5, 10, 5);
+    scene.add(light);
+
+    let ambient = new THREE.AmbientLight(0x404040);
+    scene.add(ambient);
+
+    buildGround();
+
+    let bodyGeo = new THREE.BoxGeometry(1, 2, 1);
+    let bodyMat = new THREE.MeshStandardMaterial({ color: theme.player });
+    player = new THREE.Mesh(bodyGeo, bodyMat);
+
+    let headGeo = new THREE.SphereGeometry(0.7, 12, 12);
+    let head = new THREE.Mesh(headGeo, bodyMat);
+    head.position.y = 1.4;
+    player.add(head);
+
+    let eyeGeo = new THREE.SphereGeometry(0.15);
+    let eyeMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+    let eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+    let eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+    eyeL.position.set(-0.25, 1.5, 0.6);
+    eyeR.position.set(0.25, 1.5, 0.6);
+    player.add(eyeL);
+    player.add(eyeR);
+
+    player.position.y = -2.5;
+    scene.add(player);
+
+    document.addEventListener("keydown", movePlayer);
+    window.addEventListener("resize", onResize);
+    document.addEventListener("keydown", dimensionKey);
+
+    gameRunning = true;
+}
+
+/* DIMENSION SHIFT */
+function dimensionKey(e) {
+    if (e.key === "q") toggleDimension();
+}
+
+function toggleDimension() {
+    dimension = dimension === 0 ? 1 : 0;
+    document.getElementById("dimension").innerText = dimension;
+
+    blocks.forEach(b => {
+        b.visible = (dimension === 0);
+    });
+
+    portals.forEach(p => {
+        p.visible = true;
+    });
+
+    scene.background = new THREE.Color(
+        dimension === 0 ? theme.background : 0x050010
+    );
+}
+
+/* WAVES */
+function nextWave() {
+    wave++;
+    level++;
+
+    blockSpeed += 0.01;
+    spawnRate += 0.005;
+
+    playZone -= 0.2;
+    if (playZone < minZone) playZone = minZone;
+
+    if (wave % 3 === 0) spawnPortal();
+}
+
+/* PORTAL */
+function spawnPortal() {
+    let geo = new THREE.TorusGeometry(1, 0.2, 12, 30);
+    let mat = new THREE.MeshStandardMaterial({ color: 0x00ffcc });
+    let portal = new THREE.Mesh(geo, mat);
+
+    portal.position.set(
+        (Math.random() * playZone * 2) - playZone,
+        5,
+        0
+    );
+
+    scene.add(portal);
+    portals.push(portal);
+}
+
+/* RESIZE */
+function onResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+/* MOVE */
+function movePlayer(e) {
+    if (!player) return;
+
+    if (e.key.toLowerCase() === "a") player.position.x -= 0.6;
+    if (e.key.toLowerCase() === "d") player.position.x += 0.6;
+
+    if (player.position.x < -playZone) player.position.x = -playZone + 0.4;
+    if (player.position.x > playZone) player.position.x = playZone - 0.4;
+}
+
+/* BLOCKS */
+function spawnBlock() {
+    let geo = new THREE.BoxGeometry(1, 1, 1);
+    let mat = new THREE.MeshStandardMaterial({
+        color: theme.block
+    });
+
+    let block = new THREE.Mesh(geo, mat);
+
+    block.position.x = (Math.random() * (playZone * 2)) - playZone;
+    block.position.y = 8;
+    block.position.z = 0;
+
+    scene.add(block);
+    blocks.push(block);
+}
+
+/* PARTICLES */
+function explode(x, y) {
+    for (let i = 0; i < 15; i++) {
+        let geo = new THREE.SphereGeometry(0.1);
+        let mat = new THREE.MeshStandardMaterial({ color:0xffff00 });
+        let p = new THREE.Mesh(geo, mat);
+
+        p.position.set(x, y, 0);
+        scene.add(p);
+
+        particles.push({
+            mesh: p,
+            vx: (Math.random()-0.5) * 0.2,
+            vy: Math.random() * 0.2
+        });
+    }
+}
+
+/* LOOP */
+function animate() {
+    if (!gameRunning) return;
+    requestAnimationFrame(animate);
+
+    if (Math.random() < spawnRate && blocks.length < 20) spawnBlock();
+
+    blocks.forEach((block, i) => {
+        block.position.y -= blockSpeed * 0.9;
+
+        if (block.position.y < -4) {
+            scene.remove(block);
+            blocks.splice(i, 1);
+            score++;
+        }
+
+        if (Math.abs(block.position.x - player.position.x) < 1 &&
+            Math.abs(block.position.y - player.position.y) < 1) {
+
+            health -= 10;
+            explode(block.position.x, block.position.y);
+            scene.remove(block);
+            blocks.splice(i, 1);
+
+            if (health <= 0) gameOver();
+        }
+    });
+
+    portals.forEach((p, i) => {
+        if (Math.abs(player.position.x - p.position.x) < 1) {
+            toggleDimension();
+            scene.remove(p);
+            portals.splice(i, 1);
+        }
+    });
+
+    particles.forEach((p, i) => {
+        p.mesh.position.x += p.vx;
+        p.mesh.position.y += p.vy;
+        p.vy -= 0.01;
+
+        if (p.mesh.position.y < -5) {
+            scene.remove(p.mesh);
+            particles.splice(i,1);
+        }
+    });
+
+    if (score > level * 10) nextWave();
+
+    document.getElementById("health").innerText = health;
+    document.getElementById("score").innerText = score;
+    document.getElementById("level").innerText = level;
+    document.getElementById("wave").innerText = wave;
+
+    renderer.render(scene, camera);
+}
+
+/* GAME OVER */
+function gameOver() {
+    gameRunning = false;
+    saveScore();
+    alert("Game Over!");
+    location.reload();
+}
+
+/* CHAT */
+function listenChat() {
+    renderChat();
+}
+</script>
+
+</body>
+</html>
