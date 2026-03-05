@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>OMNIVERSE DODGE - Play Free Online | PandaLordKyle Games</title>
+
+<meta name="description" content="Play OMNIVERSE DODGE online! Dodge enemies, unlock powers, survive waves, and dominate the leaderboard in this fast-paced browser game by PandaLordKyle.">
+<meta name="keywords" content="OMNIVERSE DODGE, online game, browser game, survival game, dodge game, PandaLordKyle">
+<meta name="author" content="PandaLordKyle">
+
+<meta property="og:title" content="OMNIVERSE DODGE - Play Free Online">
+<meta property="og:description" content="Dodge. Dash. Dominate. Survive endless waves in OMNIVERSE DODGE.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://pandalordkyle.netlify.app/">
+
+<link rel="icon" href="favicon.png" type="image/png">
+
+<style>
+body {
+    margin: 0;
+    background: #000;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+}
+
+header {
+    padding: 20px;
+    background: #111;
+    box-shadow: 0 0 20px #0ff;
+}
+
+h1 {
+    margin: 0;
+    font-size: 40px;
+    color: #0ff;
+}
+
+p {
+    color: #aaa;
+}
+
+#gameContainer {
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+canvas {
+    background: #000;
+    border: 2px solid #0ff;
+}
+
+footer {
+    margin-top: 40px;
+    padding: 20px;
+    background: #111;
+    font-size: 14px;
+    color: #777;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>🔥 OMNIVERSE DODGE 🔥</h1>
+<p>Survive the chaos. Unlock power. Dominate the universe.</p>
+</header>
+
+<div id="gameContainer">
+<canvas id="gameCanvas" width="800" height="500"></canvas>
+</div>
+
+<footer>
+© 2026 PandaLordKyle Games | Play free browser games online
+</footer>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+let player = {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    size: 20,
+    speed: 5
+};
+
+let keys = {};
+
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+function update() {
+    if (keys["ArrowUp"]) player.y -= player.speed;
+    if (keys["ArrowDown"]) player.y += player.speed;
+    if (keys["ArrowLeft"]) player.x -= player.speed;
+    if (keys["ArrowRight"]) player.x += player.speed;
+
+    // boundaries
+    player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
+    player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // glow effect
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "#0ff";
+
+    ctx.fillStyle = "#0ff";
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+}
+
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+
+</body>
+</html>
