@@ -1,2 +1,2 @@
-# panda-game-hub
-My Panda Game Hub
+# pandalordkyle-game
+My Panda Game
