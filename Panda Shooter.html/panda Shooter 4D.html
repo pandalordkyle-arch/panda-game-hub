@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PandaCraft Survival RPG</title>
+<style>
+body{
+    margin:0;
+    overflow:hidden;
+    background:black;
+    font-family:Arial;
+}
+
+/* GUI */
+.gui{
+    position:absolute;
+    top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    background:rgba(40,25,15,0.95);
+    border:4px solid #8b5a2b;
+    padding:20px;
+    border-radius:8px;
+    display:none;
+    color:white;
+    text-align:center;
+    min-width:300px;
+}
+
+#startMenu{display:block;}
+#deathScreen{display:none;}
+
+.mc-button{
+    background:#8b5a2b;
+    border:2px solid #3a2412;
+    color:white;
+    padding:10px 20px;
+    margin:6px;
+    cursor:pointer;
+    font-size:16px;
+}
+.mc-button:hover{background:#a06b35;}
+
+/* CHAT */
+#chat{
+    position:absolute;
+    bottom:120px;
+    left:10px;
+    width:300px;
+    max-height:200px;
+    overflow:auto;
+    color:white;
+    font-size:14px;
+}
+
+/* CHAT INPUT */
+#chatInput{
+    position:absolute;
+    bottom:80px;
+    left:10px;
+    width:280px;
+    display:none;
+}
+
+/* HOTBAR */
+#hotbar{
+    position:absolute;
+    bottom:10px;
+    left:50%;
+    transform:translateX(-50%);
+    display:flex;
+    gap:4px;
+}
+.hot{
+    width:50px; height:50px;
+    background:rgba(0,0,0,0.7);
+    border:2px solid #555;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:white;
+}
+
+/* STATS */
+#stats{
+    position:absolute;
+    bottom:10px;
+    left:10px;
+    color:white;
+}
+
+/* CROSSHAIR */
+#crosshair{
+    position:absolute;
+    top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    color:white;
+    font-size:22px;
+    pointer-events:none;
+}
+</style>
+</head>
+<body>
+
+<!-- START MENU -->
+<div id="startMenu" class="gui">
+    <h1>PandaCraft RPG</h1>
+    <input id="playerName" placeholder="Player name">
+    <br>
+    <button class="mc-button" onclick="startGame()">Join Game</button>
+</div>
+
+<!-- DEATH SCREEN -->
+<div id="deathScreen" class="gui">
+    <h1>You Died</h1>
+    <button class="mc-button" onclick="startGame()">Respawn</button>
+</div>
+
+<!-- PAUSE -->
+<div id="pauseMenu" class="gui">
+    <h1>Paused</h1>
+    <button class="mc-button" onclick="resumeGame()">Resume</button>
+    <button class="mc-button" onclick="leaveGame()">Leave Game</button>
+</div>
+
+<!-- QUEST -->
+<div id="quest" class="gui">
+    <h2>Quest</h2>
+    <div id="questText"></div>
+    <button class="mc-button" onclick="completeQuest()">Complete</button>
+</div>
+
+<!-- CHAT -->
+<div id="chat"></div>
+<input id="chatInput" placeholder="Chat..." onkeydown="chatSend(event)">
+
+<div id="hotbar"></div>
+
+<div id="stats">
+❤️ <span id="hp">20</span>
+&nbsp; 🛡 <span id="armor">0</span>
+&nbsp; ⚔ <span id="level">1</span>
+</div>
+
+<div id="crosshair">+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160/build/three.min.js"></script>
+<script>
+
+/* =======================
+   GAME STATE
+======================= */
+let gameRunning = false;
+let playerName = "Player";
+
+let health = 20, armor = 0, level = 1, exp = 0;
+let coins = 0;
+
+let quest = "Collect 5 wood";
+let questProgress = 0;
+
+const MAX = 26;
+let inventory = new Array(MAX).fill(null);
+let durability = {};
+let hotbarSlot = 0;
+
+let enemies = [];
+
+/* CHAT */
+const chat = document.getElementById("chat");
+function addChat(msg){
+    const p = document.createElement("div");
+    p.textContent = msg;
+    chat.appendChild(p);
+    chat.scrollTop = chat.scrollHeight;
+}
+
+function chatSend(e){
+    if(e.key === "Enter"){
+        const input = e.target;
+        if(input.value.trim()){
+            addChat(playerName + ": " + input.value);
+        }
+        input.value = "";
+        input.style.display = "none";
+    }
+}
+
+/* GUI HELPERS */
+function show(id){ document.getElementById(id).style.display = "block"; }
+function hide(id){ document.getElementById(id).style.display = "none"; }
+
+/* START GAME */
+function startGame(){
+    playerName = document.getElementById("playerName").value || "Player";
+    hide("startMenu");
+    hide("deathScreen");
+    gameRunning = true;
+    addChat("Welcome " + playerName);
+    document.body.requestPointerLock();
+    updateQuest();
+}
+
+/* RESUME */
+function resumeGame(){
+    hide("pauseMenu");
+    gameRunning = true;
+    document.body.requestPointerLock();
+}
+
+/* LEAVE */
+function leaveGame(){
+    location.reload();
+}
+
+/* DEATH */
+function die(){
+    gameRunning = false;
+    show("deathScreen");
+    document.exitPointerLock();
+}
+
+/* ESC + SHORTCUTS */
+document.addEventListener("keydown", e => {
+    if(e.key === "Escape"){
+        if(gameRunning){
+            gameRunning = false;
+            show("pauseMenu");
+            document.exitPointerLock();
+        }
+    }
+    if(e.key === "t"){
+        const input = document.getElementById("chatInput");
+        input.style.display = "block";
+        input.focus();
+    }
+    if(e.key === "e"){
+        toggleInventory();
+    }
+});
+
+/* INVENTORY */
+function toggleInventory(){
+    renderInventory();
+}
+
+/* HOTBAR */
+function updateHotbar(){
+    const h = document.getElementById("hotbar");
+    h.innerHTML = "";
+    for(let i=0;i<9;i++){
+        const d = document.createElement("div");
+        d.className = "hot";
+        if(inventory[i]) d.textContent = inventory[i].type[0].toUpperCase();
+        if(i === hotbarSlot) d.style.border = "2px solid white";
+        h.appendChild(d);
+    }
+}
+
+/* ITEMS */
+function addItem(type,count=1){
+    for(let i=0;i<MAX;i++){
+        if(inventory[i] && inventory[i].type===type){
+            inventory[i].count += count;
+            updateHotbar();
+            return;
+        }
+    }
+    for(let i=0;i<MAX;i++){
+        if(!inventory[i]){
+            inventory[i]={type,count};
+            updateHotbar();
+            return;
+        }
+    }
+}
+
+/* DURABILITY */
+function useDurability(type){
+    if(!durability[type]) durability[type]=100;
+    durability[type]--;
+    if(durability[type] <= 0){
+        addChat(type + " broke!");
+        durability[type]=0;
+        inventory[hotbarSlot]=null;
+        updateHotbar();
+    }
+}
+
+/* QUEST */
+function updateQuest(){
+    document.getElementById("questText").textContent = quest;
+}
+
+function completeQuest(){
+    if(quest === "Collect 5 wood" && questProgress >= 5){
+        addChat("Quest complete!");
+        addExp(10);
+        coins += 5;
+        quest = "Defeat an enemy";
+        questProgress = 0;
+        updateQuest();
+    }
+}
+
+/* EXP */
+function addExp(x){
+    exp += x;
+    if(exp >= 20){
+        level++;
+        exp = 0;
+        addChat("Level up!");
+    }
+}
+
+/* ENEMIES */
+function spawnEnemy(x,z){
+    const geo = new THREE.BoxGeometry(1,2,1);
+    const mat = new THREE.MeshLambertMaterial({color:0xaa0000});
+    const e = new THREE.Mesh(geo,mat);
+    e.position.set(x,1,z);
+    e.health = 10;
+    scene.add(e);
+    enemies.push(e);
+}
+
+function updateEnemies(){
+    enemies.forEach(e=>{
+        let dir = camera.position.clone().sub(e.position);
+        dir.y = 0;
+        if(dir.length() < 30){
+            dir.normalize();
+            e.position.addScaledVector(dir,0.02);
+        }
+        if(e.position.distanceTo(camera.position) < 1.5){
+            health -= 0.1;
+            updateStats();
+            if(health <= 0) die();
+        }
+    });
+}
+
+/* LOOT */
+function dropLoot(){
+    addItem("coin",1);
+    addChat("Loot: coin");
+}
+
+/* COMBAT */
+function attack(){
+    enemies.forEach(e=>{
+        if(camera.position.distanceTo(e.position) < 6){
+            e.health -= 5;
+            addChat("Hit enemy!");
+            if(e.health <= 0){
+                scene.remove(e);
+                dropLoot();
+            }
+        }
+    });
+}
+
+document.body.addEventListener("click",()=>{
+    if(!gameRunning) return;
+    attack();
+});
+
+/* STATS */
+function updateStats(){
+    document.getElementById("hp").textContent = Math.max(0,Math.floor(health));
+    document.getElementById("armor").textContent = armor;
+    document.getElementById("level").textContent = level;
+    if(health <= 0) die();
+}
+
+/* THREE SETUP */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.4));
+const sun = new THREE.DirectionalLight(0xffffff,1);
+scene.add(sun);
+
+/* SMOOTH TERRAIN */
+function loadTerrain(){
+    const geo = new THREE.PlaneGeometry(100,100);
+    const mat = new THREE.MeshLambertMaterial({color:0x228b22});
+    const ground = new THREE.Mesh(geo,mat);
+    ground.rotation.x = -Math.PI/2;
+    ground.position.y = 0;
+    scene.add(ground);
+
+    spawnEnemy(5,5);
+    spawnEnemy(-8,2);
+}
+
+loadTerrain();
+
+/* PLAYER */
+camera.position.set(0,5,10);
+let yaw=0,pitch=0;
+let velocityY=0;
+let keys={};
+
+/* MOVEMENT */
+document.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+
+document.addEventListener("mousemove",e=>{
+    if(document.pointerLockElement===document.body && gameRunning){
+        yaw -= e.movementX * 0.002;
+        pitch -= e.movementY * 0.002;
+        pitch = Math.max(-1.5,Math.min(1.5,pitch));
+        camera.rotation.set(pitch,yaw,0,"YXZ");
+    }
+});
+
+/* UPDATE */
+function update(){
+    if(!gameRunning) return;
+
+    const f = new THREE.Vector3();
+    camera.getWorldDirection(f);
+    f.y = 0; f.normalize();
+    const r = new THREE.Vector3();
+    r.crossVectors(f,new THREE.Vector3(0,1,0)).normalize();
+
+    if(keys["w"]) camera.position.addScaledVector(f,0.15);
+    if(keys["s"]) camera.position.addScaledVector(f,-0.15);
+    if(keys["a"]) camera.position.addScaledVector(r,-0.15);
+    if(keys["d"]) camera.position.addScaledVector(r,0.15);
+
+    velocityY -= 0.02;
+    camera.position.y += velocityY;
+    if(camera.position.y < 1){
+        camera.position.y = 1;
+        velocityY = 0;
+    }
+
+    updateEnemies();
+    updateStats();
+}
+
+/* LOOP */
+function animate(){
+    requestAnimationFrame(animate);
+    update();
+    renderer.render(scene,camera);
+}
+animate();
+
+window.addEventListener("resize",()=>{
+    camera.aspect = innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+});
+
+</script>
+</body>
+</html>
