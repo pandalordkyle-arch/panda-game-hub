@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OMNIVERSE DODGE - PRO MENU</title>
+
+<style>
+body {
+    margin: 0;
+    background: #050505;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+}
+
+#menu {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background: radial-gradient(circle, #111, #000);
+}
+
+#menu h1 {
+    font-size: 48px;
+    color: #0ff;
+    margin-bottom: 10px;
+}
+
+#menu p {
+    color: #aaa;
+}
+
+#playBtn {
+    margin-top: 20px;
+    padding: 15px 40px;
+    font-size: 22px;
+    background: #0ff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+
+#playBtn:hover {
+    background: #00cccc;
+}
+
+#topScore {
+    margin-top: 20px;
+    font-size: 18px;
+    color: #ff0;
+}
+
+/* GAME SCREEN */
+#gameScreen {
+    display: none;
+}
+
+header {
+    padding: 15px;
+    background: #111;
+    box-shadow: 0 0 15px #0ff;
+}
+
+#gameContainer {
+    display: flex;
+    justify-content: center;
+    margin-top: 10px;
+}
+
+canvas {
+    background: #000;
+    border: 2px solid #0ff;
+}
+
+#hud {
+    margin-top: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<!-- MENU -->
+<div id="menu">
+    <h1>🔥 OMNIVERSE DODGE 🔥</h1>
+    <p>Survive waves. Upgrade. Dominate.</p>
+
+    <button id="playBtn">▶ PLAY</button>
+
+    <div id="topScore">
+        Top Score: <span id="topScoreValue">0</span>
+    </div>
+</div>
+
+<!-- GAME -->
+<div id="gameScreen">
+
+<header>
+<h1>OMNIVERSE DODGE</h1>
+<p>Waves | Inventory | Upgrades</p>
+</header>
+
+<div id="gameContainer">
+<canvas id="gameCanvas" width="800" height="500"></canvas>
+</div>
+
+<div id="hud">
+<p id="healthText">Health: 100</p>
+<p id="scoreText">Score: 0 | Wave: 1</p>
+<p id="inventoryText">Inventory: []</p>
+<p>Move: Arrow Keys | Shoot: Space | Use Item: E | Skin: 1-10</p>
+</div>
+
+</div>
+
+<script>
+// MENU & GAME SWITCH
+const menu = document.getElementById("menu");
+const gameScreen = document.getElementById("gameScreen");
+const playBtn = document.getElementById("playBtn");
+const topScoreValue = document.getElementById("topScoreValue");
+
+let topScore = localStorage.getItem("topScore") || 0;
+topScoreValue.textContent = topScore;
+
+playBtn.addEventListener("click", () => {
+    menu.style.display = "none";
+    gameScreen.style.display = "block";
+    startGame();
+});
+
+// GAME CODE
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+let keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+// SKINS
+const skins = ["#0ff", "#f00", "#0f0", "#ff0", "#f0f",
+              "#ff8800", "#00ff88", "#888", "#0088ff", "#ffffff"];
+
+let selectedSkin = 0;
+
+// PLAYER
+let player;
+let enemies = [];
+let drops = [];
+let powerUps = [];
+let score = 0;
+let wave = 1;
+let boss = null;
+let lastSpawn = 0;
+let enemySpawnRate = 1600;
+
+// START GAME
+function startGame() {
+    player = {
+        x: canvas.width / 2,
+        y: canvas.height / 2,
+        size: 20,
+        speed: 5,
+        health: 100,
+        bullets: [],
+        inventory: [],
+        upgrades: { damage: 1 }
+    };
+
+    enemies = [];
+    drops = [];
+    powerUps = [];
+    score = 0;
+    wave = 1;
+    boss = null;
+    gameLoop();
+}
+
+// INVENTORY
+function useItem() {
+    if (player.inventory.length === 0) return;
+
+    const item = player.inventory.pop();
+    if (item === "HP") player.health = Math.min(100, player.health + 30);
+    if (item === "SPEED") player.speed += 1;
+    if (item === "DAMAGE") player.upgrades.damage += 1;
+
+    updateHUD();
+}
+
+// SHOOT
+function shoot() {
+    player.bullets.push({ x: player.x, y: player.y, size: 5, speed: 8 });
+}
+
+// SPAWN
+function spawnEnemy() {
+    let side = Math.floor(Math.random() * 4);
+    let x, y;
+    if (side === 0) { x = Math.random() * canvas.width; y = -20; }
+    if (side === 1) { x = Math.random() * canvas.width; y = canvas.height + 20; }
+    if (side === 2) { x = -20; y = Math.random() * canvas.height; }
+    if (side === 3) { x = canvas.width + 20; y = Math.random() * canvas.height; }
+
+    enemies.push({ x, y, size: 18, speed: 1 + Math.random() * 1.5, health: 2 });
+}
+
+// UPDATE
+function update() {
+    if (keys["ArrowUp"]) player.y -= player.speed;
+    if (keys["ArrowDown"]) player.y += player.speed;
+    if (keys["ArrowLeft"]) player.x -= player.speed;
+    if (keys["ArrowRight"]) player.x += player.speed;
+
+    if (keys[" "]) shoot();
+    if (keys["e"] || keys["E"]) useItem();
+
+    player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
+    player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
+
+    if (Date.now() - lastSpawn > enemySpawnRate) {
+        spawnEnemy();
+        lastSpawn = Date.now();
+        enemySpawnRate = Math.max(500, enemySpawnRate - 5);
+    }
+
+    enemies.forEach((enemy, i) => {
+        let dx = player.x - enemy.x;
+        let dy = player.y - enemy.y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+
+        enemy.x += (dx / dist) * enemy.speed;
+        enemy.y += (dy / dist) * enemy.speed;
+
+        if (dist < player.size + enemy.size) {
+            player.health -= 1;
+            if (player.health <= 0) endGame();
+        }
+    });
+
+    player.bullets.forEach((b, i) => {
+        b.y -= b.speed;
+
+        enemies.forEach((enemy, ei) => {
+            let dx = b.x - enemy.x;
+            let dy = b.y - enemy.y;
+            let dist = Math.sqrt(dx*dx + dy*dy);
+
+            if (dist < enemy.size) {
+                enemy.health -= player.upgrades.damage;
+                player.bullets.splice(i, 1);
+
+                if (enemy.health <= 0) {
+                    enemies.splice(ei, 1);
+                    score += 1;
+                    drops.push({ x: enemy.x, y: enemy.y, size: 10 });
+
+                    if (Math.random() < 0.2) powerUps.push({ x: enemy.x, y: enemy.y, size: 10, type: "HP" });
+                }
+            }
+        });
+    });
+
+    drops.forEach((drop, i) => {
+        let dx = player.x - drop.x;
+        let dy = player.y - drop.y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist < player.size + drop.size) {
+            player.inventory.push("HP");
+            drops.splice(i, 1);
+        }
+    });
+
+    powerUps.forEach((p, i) => {
+        let dx = player.x - p.x;
+        let dy = player.y - p.y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+
+        if (dist < player.size + p.size) {
+            player.inventory.push(p.type);
+            powerUps.splice(i, 1);
+        }
+    });
+
+    if (score > wave * 10) {
+        wave++;
+        enemies = [];
+    }
+
+    updateHUD();
+}
+
+// HUD
+function updateHUD() {
+    document.getElementById("healthText").textContent = "Health: " + player.health;
+    document.getElementById("scoreText").textContent = "Score: " + score + " | Wave: " + wave;
+    document.getElementById("inventoryText").textContent = "Inventory: [" + player.inventory.join(", ") + "]";
+
+    if (score > topScore) {
+        topScore = score;
+        localStorage.setItem("topScore", topScore);
+        topScoreValue.textContent = topScore;
+    }
+}
+
+// DRAW
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = skins[selectedSkin];
+    ctx.fillStyle = skins[selectedSkin];
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    player.bullets.forEach(b => {
+        ctx.fillStyle = "#ff0";
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    enemies.forEach(enemy => {
+        ctx.fillStyle = "#f00";
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    drops.forEach(drop => {
+        ctx.fillStyle = "#0f0";
+        ctx.beginPath();
+        ctx.arc(drop.x, drop.y, drop.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+// GAME LOOP
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// END GAME
+function endGame() {
+    alert("You died! Final Score: " + score);
+    menu.style.display = "flex";
+    gameScreen.style.display = "none";
+}
+
+</script>
+
+</body>
+</html>
