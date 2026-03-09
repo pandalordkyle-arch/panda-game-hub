@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Panda Flappy GOD MODE</title>
+
+<style>
+
+body{
+margin:0;
+overflow:hidden;
+font-family:Arial;
+background:black;
+}
+
+canvas{
+display:block;
+margin:auto;
+}
+
+#ui{
+position:absolute;
+top:20px;
+left:50%;
+transform:translateX(-50%);
+text-align:center;
+color:white;
+font-weight:bold;
+}
+
+#score{
+font-size:40px;
+}
+
+#coins{
+font-size:20px;
+}
+
+#achievements{
+position:absolute;
+bottom:20px;
+left:20px;
+color:white;
+font-size:14px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+<div id="score">0</div>
+<div id="coins">Coins: 0</div>
+</div>
+
+<div id="achievements"></div>
+
+<canvas id="game" width="400" height="600"></canvas>
+
+<script>
+
+const canvas = document.getElementById("game")
+const ctx = canvas.getContext("2d")
+
+let score = 0
+let coins = 0
+let pipes = []
+let coinList = []
+
+let time = 0
+
+let bird = {
+x:80,
+y:300,
+vel:0,
+gravity:0.5,
+jump:-8,
+wing:0
+}
+
+function jump(){
+bird.vel = bird.jump
+}
+
+document.addEventListener("keydown",jump)
+document.addEventListener("click",jump)
+
+function spawnPipe(){
+
+let gap = 150
+let top = Math.random()*250 + 50
+
+pipes.push({
+x:canvas.width,
+width:60,
+top:top,
+bottom:top+gap,
+boss: Math.random()<0.1
+})
+
+if(Math.random()<0.5){
+
+coinList.push({
+x:canvas.width+30,
+y:top+gap/2
+})
+
+}
+
+}
+
+setInterval(spawnPipe,1600)
+
+function drawBird(){
+
+bird.wing += 0.3
+
+ctx.fillStyle="white"
+ctx.beginPath()
+ctx.arc(bird.x,bird.y,18,0,Math.PI*2)
+ctx.fill()
+
+// ears
+ctx.fillStyle="black"
+ctx.beginPath()
+ctx.arc(bird.x-12,bird.y-15,6,0,Math.PI*2)
+ctx.arc(bird.x+12,bird.y-15,6,0,Math.PI*2)
+ctx.fill()
+
+// wings animation
+ctx.strokeStyle="black"
+ctx.lineWidth=3
+
+let wingY = Math.sin(bird.wing)*10
+
+ctx.beginPath()
+ctx.moveTo(bird.x,bird.y)
+ctx.lineTo(bird.x-20,bird.y+wingY)
+ctx.stroke()
+
+ctx.beginPath()
+ctx.moveTo(bird.x,bird.y)
+ctx.lineTo(bird.x+20,bird.y-wingY)
+ctx.stroke()
+
+}
+
+function drawMountains(offset,color,height){
+
+ctx.fillStyle=color
+
+for(let i=0;i<6;i++){
+
+ctx.beginPath()
+ctx.moveTo(i*150-offset,500)
+ctx.lineTo(i*150+75-offset,500-height)
+ctx.lineTo(i*150+150-offset,500)
+ctx.fill()
+
+}
+
+}
+
+function achievements(){
+
+let list=""
+
+if(score>=5) list+="🐼 Beginner Flapper<br>"
+if(score>=20) list+="🔥 Sky Master<br>"
+if(coins>=10) list+="🪙 Coin Collector<br>"
+if(score>=50) list+="👑 Panda Legend<br>"
+
+document.getElementById("achievements").innerHTML=list
+
+}
+
+function update(){
+
+time++
+
+let day = Math.sin(time*0.002)
+
+let sky = Math.floor((day+1)*80)
+
+ctx.fillStyle=`rgb(${sky},${sky+50},${sky+100})`
+ctx.fillRect(0,0,canvas.width,canvas.height)
+
+// parallax mountains
+
+drawMountains(time*0.2,"#37474f",120)
+drawMountains(time*0.4,"#455a64",90)
+drawMountains(time*0.7,"#546e7a",60)
+
+bird.vel += bird.gravity
+bird.y += bird.vel
+
+drawBird()
+
+pipes.forEach(pipe=>{
+
+pipe.x -= 2
+
+ctx.fillStyle = pipe.boss ? "purple" : "green"
+
+ctx.fillRect(pipe.x,0,pipe.width,pipe.top)
+ctx.fillRect(pipe.x,pipe.bottom,pipe.width,canvas.height)
+
+if(
+bird.x+18 > pipe.x &&
+bird.x-18 < pipe.x+pipe.width &&
+(bird.y-18 < pipe.top || bird.y+18 > pipe.bottom)
+){
+location.reload()
+}
+
+if(!pipe.passed && pipe.x < bird.x){
+
+pipe.passed=true
+score++
+
+document.getElementById("score").innerText=score
+
+}
+
+})
+
+// coins
+
+coinList.forEach(c=>{
+
+c.x -=2
+
+ctx.fillStyle="gold"
+
+ctx.beginPath()
+ctx.arc(c.x,c.y,8,0,Math.PI*2)
+ctx.fill()
+
+if(
+Math.abs(bird.x-c.x)<20 &&
+Math.abs(bird.y-c.y)<20
+){
+coins++
+document.getElementById("coins").innerText="Coins: "+coins
+c.x=-100
+}
+
+})
+
+achievements()
+
+if(bird.y>600 || bird.y<0){
+location.reload()
+}
+
+requestAnimationFrame(update)
+
+}
+
+update()
+
+</script>
+
+</body>
+</html>
